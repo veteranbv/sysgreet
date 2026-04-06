@@ -24,7 +24,7 @@ var colorCodes = map[string]string{
 	"purple":      "\033[35m",
 	"cyan":        "\033[36m",
 	"gray":        "\033[37m",
-	"white":       "\033[97m",
+	"white":       "\033[37m",
 	"brightblue":  "\033[94m",
 	"brightcyan":  "\033[96m",
 	"brightwhite": "\033[97m",
