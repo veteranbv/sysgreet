@@ -60,7 +60,7 @@ func (r Renderer) Render(out banner.Output, cfg config.Config) string {
 			continue
 		}
 		builder.WriteString("\n")
-		builder.WriteString(section.Title)
+		builder.WriteString(r.clip(section.Title, 0))
 		builder.WriteString("\n")
 		for _, line := range section.Lines {
 			formatted := r.clip(line, len(bodyIndent))

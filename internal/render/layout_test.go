@@ -482,3 +482,18 @@ func TestApplyConfig(t *testing.T) {
 		t.Errorf("empty config should leave env unchanged: %+v", untouched)
 	}
 }
+
+func TestRenderer_ClipsSectionTitles(t *testing.T) {
+	out := banner.Output{
+		Header: banner.Header{Hostname: "vm", Art: "VM"},
+		Sections: []banner.Section{
+			{Key: "resources", Title: "Resources", Lines: []string{"Mem: 4%"}},
+		},
+	}
+	result := NewRenderer(terminal.Env{Width: 8}).Render(out, config.Default())
+	for _, line := range strings.Split(result, "\n") {
+		if n := len([]rune(line)); n > 8 {
+			t.Errorf("line exceeds width 8 (%d): %q", n, line)
+		}
+	}
+}

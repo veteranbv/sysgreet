@@ -81,7 +81,7 @@ func (b *Banner) buildHeader(snap collectors.Snapshot, cfg config.Config, env te
 		Gradient:      cfg.ASCII.Gradient,
 		Monochrome:    cfg.ASCII.Monochrome,
 		Uppercase:     true,
-		MaxWidth:      effectiveWidth(cfg, env),
+		MaxWidth:      env.Width,
 		ShortenDomain: true,
 		Profile:       env.Profile,
 	})
@@ -106,16 +106,6 @@ func (b *Banner) buildHeader(snap collectors.Snapshot, cfg config.Config, env te
 		lines = append(lines, line)
 	}
 	return Header{Hostname: name, Art: art.Text, Font: art.Font, Color: art.Color, Lines: lines}
-}
-
-// effectiveWidth combines the detected terminal width with the configured
-// layout.max_width cap; zero means unconstrained.
-func effectiveWidth(cfg config.Config, env terminal.Env) int {
-	width := env.Width
-	if max := cfg.Layout.MaxWidth; max > 0 && (width == 0 || max < width) {
-		width = max
-	}
-	return width
 }
 
 func (b *Banner) buildSections(snap collectors.Snapshot, cfg config.Config) []Section {

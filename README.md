@@ -141,7 +141,10 @@ sysgreet --config ~/alt.yaml   # Point at a specific config file
 
 Sysgreet looks for configuration in this order:
 
-1. `SYSGREET_CONFIG` environment variable (absolute or `~/` paths)
+1. `--config` flag or `SYSGREET_CONFIG` environment variable (absolute or
+   `~/` paths). An explicit path is exclusive — if the file is missing,
+   sysgreet uses built-in defaults rather than silently reading another
+   config.
 2. `~/.config/sysgreet/config.yaml` (or `.yml`, `.toml`)
 3. `~/.sysgreet.yaml` / `.toml`
 

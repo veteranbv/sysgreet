@@ -2,7 +2,6 @@ package collectors
 
 import (
 	"context"
-	"sync"
 	"time"
 )
 
@@ -118,69 +117,90 @@ type Providers struct {
 }
 
 // Gather builds a Snapshot using the configured providers. Collectors run
-// concurrently — each writes a distinct Snapshot field — and share a single
-// deadline. Missing collectors and failures are tolerated to allow graceful
-// degradation.
+// concurrently and share a single deadline; whatever has finished by then is
+// used and the rest is abandoned, so a stuck collector can never delay a
+// login even if it ignores context cancellation. Missing collectors and
+// failures are tolerated to allow graceful degradation.
 func (p Providers) Gather(ctx context.Context) Snapshot {
 	ctx, cancel := context.WithTimeout(ctx, gatherTimeout)
 	defer cancel()
 
-	var snap Snapshot
-	var wg sync.WaitGroup
-	collect := func(fn func()) {
-		wg.Add(1)
+	// Each collector sends an apply function; the snapshot is only ever
+	// touched from this goroutine, so an abandoned straggler cannot race
+	// the caller. The channel is buffered so stragglers finish into it
+	// instead of leaking blocked forever.
+	results := make(chan func(*Snapshot), 5)
+	launched := 0
+	launch := func(fn func() func(*Snapshot)) {
+		launched++
 		go func() {
-			defer wg.Done()
-			fn()
+			results <- fn()
 		}()
 	}
 
 	if p.System != nil {
-		collect(func() {
-			if sys, err := p.System.CollectSystem(ctx); err == nil {
-				snap.System = sys
-			} else {
+		launch(func() func(*Snapshot) {
+			sys, err := p.System.CollectSystem(ctx)
+			if err != nil {
 				recordError("system", err)
+				return nil
 			}
+			return func(s *Snapshot) { s.System = sys }
 		})
 	}
 	if p.Network != nil {
-		collect(func() {
-			if netInfo, err := p.Network.CollectNetwork(ctx); err == nil {
-				snap.Network = netInfo
-			} else {
+		launch(func() func(*Snapshot) {
+			netInfo, err := p.Network.CollectNetwork(ctx)
+			if err != nil {
 				recordError("network", err)
+				return nil
 			}
+			return func(s *Snapshot) { s.Network = netInfo }
 		})
 	}
 	if p.Resources != nil {
-		collect(func() {
-			if res, err := p.Resources.CollectResources(ctx); err == nil {
-				snap.Resources = res
-			} else {
+		launch(func() func(*Snapshot) {
+			res, err := p.Resources.CollectResources(ctx)
+			if err != nil {
 				recordError("resources", err)
+				return nil
 			}
+			return func(s *Snapshot) { s.Resources = res }
 		})
 	}
 	if p.Session != nil {
-		collect(func() {
-			if session, err := p.Session.CollectSession(ctx); err == nil {
-				snap.Session = session
-			} else {
+		launch(func() func(*Snapshot) {
+			session, err := p.Session.CollectSession(ctx)
+			if err != nil {
 				recordError("session", err)
+				return nil
 			}
+			return func(s *Snapshot) { s.Session = session }
 		})
 	}
 	if p.LastLogin != nil {
-		collect(func() {
-			if last, err := p.LastLogin.CollectLastLogin(ctx); err == nil {
-				snap.LastLogin = last
-			} else {
+		launch(func() func(*Snapshot) {
+			last, err := p.LastLogin.CollectLastLogin(ctx)
+			if err != nil {
 				recordError("last_login", err)
+				return nil
 			}
+			return func(s *Snapshot) { s.LastLogin = last }
 		})
 	}
-	wg.Wait()
+
+	var snap Snapshot
+	for i := 0; i < launched; i++ {
+		select {
+		case apply := <-results:
+			if apply != nil {
+				apply(&snap)
+			}
+		case <-ctx.Done():
+			recordError("gather", ctx.Err())
+			return snap
+		}
+	}
 	return snap
 }
 

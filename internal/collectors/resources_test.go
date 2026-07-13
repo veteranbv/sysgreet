@@ -60,13 +60,19 @@ func TestGatherRunsCollectorsConcurrently(t *testing.T) {
 }
 
 func TestGatherToleratesHangingCollector(t *testing.T) {
+	// One collector blocks without honoring ctx; the others finish. Gather
+	// must return at the deadline with the finished results applied.
 	providers := Providers{
-		System: hangingSystemCollector{},
+		System:  hangingSystemCollector{},
+		Session: slowSessionCollector{},
 	}
 	start := time.Now()
-	providers.Gather(context.Background())
+	snap := providers.Gather(context.Background())
 	if elapsed := time.Since(start); elapsed > gatherTimeout+150*time.Millisecond {
 		t.Errorf("Gather took %v; timeout did not bound a hanging collector", elapsed)
+	}
+	if snap.Session.RemoteAddr != "203.0.113.7" {
+		t.Errorf("results from finished collectors should survive a timeout, got %+v", snap.Session)
 	}
 }
 
@@ -105,13 +111,11 @@ func (slowLastLoginCollector) CollectLastLogin(ctx context.Context) (*LastLoginI
 	return &LastLoginInfo{Timestamp: time.Now()}, nil
 }
 
+// hangingSystemCollector ignores context cancellation entirely, modeling a
+// blocking syscall; Gather must still return at its deadline.
 type hangingSystemCollector struct{}
 
 func (hangingSystemCollector) CollectSystem(ctx context.Context) (SystemInfo, error) {
-	select {
-	case <-ctx.Done():
-		return SystemInfo{}, ctx.Err()
-	case <-time.After(10 * time.Second):
-		return SystemInfo{}, nil
-	}
+	time.Sleep(10 * time.Second)
+	return SystemInfo{}, nil
 }

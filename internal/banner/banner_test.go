@@ -363,7 +363,7 @@ func TestBanner_buildHeaderShortensForNarrowTerminal(t *testing.T) {
 	}
 }
 
-func TestBanner_buildHeaderRespectsConfiguredMaxWidth(t *testing.T) {
+func TestBanner_buildHeaderRespectsEnvWidth(t *testing.T) {
 	b, err := New(collectors.Providers{}, mustRenderer(t), nil)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -371,14 +371,14 @@ func TestBanner_buildHeaderRespectsConfiguredMaxWidth(t *testing.T) {
 	snap := collectors.Snapshot{
 		System: collectors.SystemInfo{Hostname: "media-server-vault-01"},
 	}
-	cfg := config.Default()
-	cfg.Layout.MaxWidth = 40
 
-	header := b.buildHeader(snap, cfg, terminal.Env{Width: 200})
+	// env.Width is the single width authority; layout.max_width folds into
+	// it upstream via render.ApplyConfig.
+	header := b.buildHeader(snap, config.Default(), terminal.Env{Width: 40})
 
 	for _, line := range strings.Split(header.Art, "\n") {
 		if n := len([]rune(line)); n > 40 {
-			t.Errorf("art line exceeds layout.max_width 40 (%d): %q", n, line)
+			t.Errorf("art line exceeds env width 40 (%d): %q", n, line)
 		}
 	}
 }

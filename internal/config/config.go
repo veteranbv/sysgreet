@@ -21,8 +21,11 @@ func Load() (Config, string, error) {
 	cfg := Default()
 	candidatePaths := defaultConfigPaths()
 
+	// An explicit config path (--config or SYSGREET_CONFIG) is exclusive:
+	// if that file is absent we fall back to built-in defaults, never to a
+	// different config file the user didn't ask for.
 	if custom := os.Getenv("SYSGREET_CONFIG"); custom != "" {
-		candidatePaths = append([]string{custom}, candidatePaths...)
+		candidatePaths = []string{custom}
 	}
 
 	var usedPath string
