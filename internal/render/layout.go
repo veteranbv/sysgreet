@@ -54,6 +54,13 @@ func (r Renderer) Render(out banner.Output, cfg config.Config) string {
 		}
 	}
 
+	// The indent has to fit inside the width cap too; drop it on absurdly
+	// narrow terminals rather than overflow.
+	indent := bodyIndent
+	if r.width > 0 && r.width <= len(bodyIndent) {
+		indent = ""
+	}
+
 	sections := orderSections(out.Sections, cfg.Layout.Sections)
 	for _, section := range sections {
 		if len(section.Lines) == 0 {
@@ -63,11 +70,11 @@ func (r Renderer) Render(out banner.Output, cfg config.Config) string {
 		builder.WriteString(r.clip(section.Title, 0))
 		builder.WriteString("\n")
 		for _, line := range section.Lines {
-			formatted := r.clip(line, len(bodyIndent))
+			formatted := r.clip(line, len(indent))
 			if section.Key == "resources" {
 				formatted = r.highlightResource(section, formatted)
 			}
-			builder.WriteString(bodyIndent)
+			builder.WriteString(indent)
 			builder.WriteString(formatted)
 			builder.WriteString("\n")
 		}

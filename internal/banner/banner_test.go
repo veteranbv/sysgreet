@@ -382,3 +382,20 @@ func TestBanner_buildHeaderRespectsEnvWidth(t *testing.T) {
 		}
 	}
 }
+
+func TestBanner_buildHeaderOmitsBlankOSLine(t *testing.T) {
+	b, err := New(collectors.Providers{}, mustRenderer(t), nil)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	// A timed-out system collector leaves SystemInfo zero-valued.
+	snap := collectors.Snapshot{}
+	cfg := config.Default()
+
+	header := b.buildHeader(snap, cfg, terminal.Env{})
+	for _, line := range header.Lines {
+		if strings.TrimSpace(line) == "" {
+			t.Fatalf("header contains a blank line: %q", header.Lines)
+		}
+	}
+}

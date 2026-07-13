@@ -517,3 +517,20 @@ func TestRenderer_CompactDoesNotDuplicateHostname(t *testing.T) {
 		t.Fatalf("compact output lost the OS line: %q", result)
 	}
 }
+
+func TestRenderer_TinyWidthsNeverOverflow(t *testing.T) {
+	out := banner.Output{
+		Header: banner.Header{Hostname: "vm", Art: "…"},
+		Sections: []banner.Section{
+			{Key: "system", Title: "System", Lines: []string{"Uptime: 4d 12h"}},
+		},
+	}
+	for _, width := range []int{1, 2, 3, 4} {
+		result := NewRenderer(terminal.Env{Width: width}).Render(out, config.Default())
+		for _, line := range strings.Split(result, "\n") {
+			if n := len([]rune(line)); n > width {
+				t.Errorf("width %d: line has %d columns: %q", width, n, line)
+			}
+		}
+	}
+}

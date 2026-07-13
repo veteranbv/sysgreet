@@ -103,7 +103,11 @@ func (b *Banner) buildHeader(snap collectors.Snapshot, cfg config.Config, env te
 		if snap.System.Arch != "" {
 			line += " (" + snap.System.Arch + ")"
 		}
-		lines = append(lines, line)
+		// A timed-out or missing system collector leaves these fields
+		// empty; omit the line rather than render it blank.
+		if strings.TrimSpace(line) != "" {
+			lines = append(lines, line)
+		}
 	}
 	return Header{Hostname: name, Art: art.Text, Font: art.Font, Color: art.Color, Lines: lines}
 }
