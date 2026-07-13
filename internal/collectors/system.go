@@ -2,8 +2,13 @@ package collectors
 
 import (
 	"context"
+	"sync"
 	"time"
 )
+
+// gatherTimeout bounds total collection time. A login banner that is a few
+// metrics short beats one that hangs the shell.
+const gatherTimeout = 250 * time.Millisecond
 
 // SystemInfo captures host identity and session metadata.
 type SystemInfo struct {
@@ -112,49 +117,71 @@ type Providers struct {
 	LastLogin LastLoginCollector
 }
 
-// Gather builds a Snapshot using the configured providers. Missing collectors are tolerated to allow graceful degradation.
+// Gather builds a Snapshot using the configured providers. Collectors run
+// concurrently — each writes a distinct Snapshot field — and share a single
+// deadline. Missing collectors and failures are tolerated to allow graceful
+// degradation.
 func (p Providers) Gather(ctx context.Context) Snapshot {
+	ctx, cancel := context.WithTimeout(ctx, gatherTimeout)
+	defer cancel()
+
 	var snap Snapshot
+	var wg sync.WaitGroup
+	collect := func(fn func()) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			fn()
+		}()
+	}
+
 	if p.System != nil {
-		if sys, err := p.System.CollectSystem(ctx); err == nil {
-			fmtSystem(&snap.System, sys)
-		} else {
-			recordError("system", err)
-		}
+		collect(func() {
+			if sys, err := p.System.CollectSystem(ctx); err == nil {
+				snap.System = sys
+			} else {
+				recordError("system", err)
+			}
+		})
 	}
 	if p.Network != nil {
-		if netInfo, err := p.Network.CollectNetwork(ctx); err == nil {
-			snap.Network = netInfo
-		} else {
-			recordError("network", err)
-		}
+		collect(func() {
+			if netInfo, err := p.Network.CollectNetwork(ctx); err == nil {
+				snap.Network = netInfo
+			} else {
+				recordError("network", err)
+			}
+		})
 	}
 	if p.Resources != nil {
-		if res, err := p.Resources.CollectResources(ctx); err == nil {
-			snap.Resources = res
-		} else {
-			recordError("resources", err)
-		}
+		collect(func() {
+			if res, err := p.Resources.CollectResources(ctx); err == nil {
+				snap.Resources = res
+			} else {
+				recordError("resources", err)
+			}
+		})
 	}
 	if p.Session != nil {
-		if session, err := p.Session.CollectSession(ctx); err == nil {
-			snap.Session = session
-		} else {
-			recordError("session", err)
-		}
+		collect(func() {
+			if session, err := p.Session.CollectSession(ctx); err == nil {
+				snap.Session = session
+			} else {
+				recordError("session", err)
+			}
+		})
 	}
 	if p.LastLogin != nil {
-		if last, err := p.LastLogin.CollectLastLogin(ctx); err == nil {
-			snap.LastLogin = last
-		} else {
-			recordError("last_login", err)
-		}
+		collect(func() {
+			if last, err := p.LastLogin.CollectLastLogin(ctx); err == nil {
+				snap.LastLogin = last
+			} else {
+				recordError("last_login", err)
+			}
+		})
 	}
+	wg.Wait()
 	return snap
-}
-
-func fmtSystem(dst *SystemInfo, src SystemInfo) {
-	*dst = src
 }
 
 // DemoSnapshot returns a realistic demo snapshot for screenshots and testing.
