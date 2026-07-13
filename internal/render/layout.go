@@ -105,8 +105,9 @@ func (r Renderer) renderCompact(out banner.Output, cfg config.Config) string {
 	return r.clip(strings.Join(parts, " | "), 0)
 }
 
-// clip truncates a line to the terminal width, accounting for indent and
-// marking the cut with an ellipsis. Zero width leaves the line untouched.
+// clip truncates a line to the terminal width in display columns,
+// accounting for indent and marking the cut with an ellipsis. Zero width
+// leaves the line untouched.
 func (r Renderer) clip(line string, indent int) string {
 	if r.width <= 0 {
 		return line
@@ -115,14 +116,7 @@ func (r Renderer) clip(line string, indent int) string {
 	if limit < 1 {
 		limit = 1
 	}
-	runes := []rune(line)
-	if len(runes) <= limit {
-		return line
-	}
-	if limit == 1 {
-		return "…"
-	}
-	return string(runes[:limit-1]) + "…"
+	return terminal.Clip(line, limit)
 }
 
 func orderSections(sections []banner.Section, desired []string) []banner.Section {

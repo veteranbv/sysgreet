@@ -145,6 +145,55 @@ func Wrap(p Profile, color, text string) string {
 	return code + text + Reset
 }
 
+// RuneWidth returns the terminal column width of r: 2 for the common East
+// Asian wide/fullwidth and emoji ranges, 1 otherwise. Zero-width combining
+// marks are rare in banner content and treated as width 1.
+func RuneWidth(r rune) int {
+	switch {
+	case r >= 0x1100 && r <= 0x115F, // Hangul Jamo
+		r >= 0x2E80 && r <= 0xA4CF, // CJK radicals through Yi
+		r >= 0xAC00 && r <= 0xD7A3, // Hangul syllables
+		r >= 0xF900 && r <= 0xFAFF, // CJK compatibility ideographs
+		r >= 0xFE30 && r <= 0xFE4F, // CJK compatibility forms
+		r >= 0xFF00 && r <= 0xFF60, // fullwidth forms
+		r >= 0xFFE0 && r <= 0xFFE6,
+		r >= 0x1F300 && r <= 0x1FAFF, // emoji
+		r >= 0x20000 && r <= 0x3FFFD: // CJK extensions
+		return 2
+	}
+	return 1
+}
+
+// DisplayWidth returns the terminal column count of s, which must not
+// contain escape sequences (Strip first if it might).
+func DisplayWidth(s string) int {
+	width := 0
+	for _, r := range s {
+		width += RuneWidth(r)
+	}
+	return width
+}
+
+// Clip truncates s to at most width display columns, marking dropped
+// content with an ellipsis. s must not contain escape sequences.
+func Clip(s string, width int) string {
+	if width <= 0 || DisplayWidth(s) <= width {
+		return s
+	}
+	if width == 1 {
+		return "…"
+	}
+	cols := 0
+	for i, r := range s {
+		rw := RuneWidth(r)
+		if cols+rw > width-1 {
+			return s[:i] + "…"
+		}
+		cols += rw
+	}
+	return s
+}
+
 // Strip removes ANSI CSI escape sequences from a string.
 func Strip(input string) string {
 	var b strings.Builder

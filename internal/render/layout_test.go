@@ -534,3 +534,18 @@ func TestRenderer_TinyWidthsNeverOverflow(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderer_ClipsWideRunesByColumns(t *testing.T) {
+	out := banner.Output{
+		Header: banner.Header{Hostname: "vm", Art: "VM"},
+		Sections: []banner.Section{
+			{Key: "system", Title: "System", Lines: []string{"User: 田中太郎 /home/田中太郎"}},
+		},
+	}
+	result := NewRenderer(terminal.Env{Width: 20}).Render(out, config.Default())
+	for _, line := range strings.Split(result, "\n") {
+		if n := terminal.DisplayWidth(line); n > 20 {
+			t.Errorf("line occupies %d columns at width 20: %q", n, line)
+		}
+	}
+}

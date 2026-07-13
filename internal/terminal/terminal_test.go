@@ -133,3 +133,46 @@ func TestCodeAndRGBCoverSameNames(t *testing.T) {
 		}
 	}
 }
+
+func TestDisplayWidth(t *testing.T) {
+	tests := []struct {
+		in   string
+		want int
+	}{
+		{"hello", 5},
+		{"", 0},
+		{"日本語", 6},
+		{"héllo", 5},
+		{"user-日本", 9},
+	}
+	for _, tt := range tests {
+		if got := DisplayWidth(tt.in); got != tt.want {
+			t.Errorf("DisplayWidth(%q) = %d, want %d", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestClip(t *testing.T) {
+	tests := []struct {
+		in    string
+		width int
+		want  string
+	}{
+		{"hello", 10, "hello"},
+		{"hello", 5, "hello"},
+		{"hello", 4, "hel…"},
+		{"hello", 1, "…"},
+		{"hello", 0, "hello"}, // zero width = unconstrained
+		{"日本語です", 4, "日…"},
+		{"日本語です", 5, "日本…"},
+	}
+	for _, tt := range tests {
+		got := Clip(tt.in, tt.width)
+		if got != tt.want {
+			t.Errorf("Clip(%q, %d) = %q, want %q", tt.in, tt.width, got, tt.want)
+		}
+		if tt.width > 0 && DisplayWidth(got) > tt.width {
+			t.Errorf("Clip(%q, %d) = %q occupies %d columns", tt.in, tt.width, got, DisplayWidth(got))
+		}
+	}
+}

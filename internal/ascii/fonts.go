@@ -164,7 +164,7 @@ func (r *Renderer) rows(text, font string) []string {
 func maxRowWidth(rows []string) int {
 	widest := 0
 	for _, row := range rows {
-		if n := len([]rune(row)); n > widest {
+		if n := terminal.DisplayWidth(row); n > widest {
 			widest = n
 		}
 	}
@@ -190,11 +190,11 @@ func (r *Renderer) plainHeader(name, fullText string, opts RenderOptions) Art {
 	}
 
 	label := name
-	if len([]rune(label))+4 > width {
-		label = clipRunes(label, width)
+	if terminal.DisplayWidth(label)+4 > width {
+		label = terminal.Clip(label, width)
 	}
 	line := label
-	if fill := width - len([]rune(label)) - 2; fill >= 2 {
+	if fill := width - terminal.DisplayWidth(label) - 2; fill >= 2 {
 		left := fill / 2
 		right := fill - left
 		line = strings.Repeat("═", left) + " " + label + " " + strings.Repeat("═", right)
@@ -209,7 +209,7 @@ func (r *Renderer) plainHeader(name, fullText string, opts RenderOptions) Art {
 		Text:      line,
 		Font:      plainFont,
 		Color:     color,
-		Width:     len([]rune(terminal.Strip(line))),
+		Width:     terminal.DisplayWidth(terminal.Strip(line)),
 		Shortened: name != fullText,
 	}
 }
@@ -223,17 +223,6 @@ func (r *Renderer) headerColor(opts RenderOptions) string {
 		}
 	}
 	return r.pickColor(opts.Color)
-}
-
-func clipRunes(s string, width int) string {
-	runes := []rune(s)
-	if len(runes) <= width {
-		return s
-	}
-	if width <= 1 {
-		return "…"
-	}
-	return string(runes[:width-1]) + "…"
 }
 
 // colorize joins the art rows, applying gradient or single-color styling

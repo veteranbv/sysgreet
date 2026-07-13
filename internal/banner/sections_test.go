@@ -1,6 +1,7 @@
 package banner
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -345,28 +346,6 @@ func TestHumanDuration(t *testing.T) {
 	}
 }
 
-func TestValueOrFallback(t *testing.T) {
-	tests := []struct {
-		name     string
-		value    string
-		fallback string
-		want     string
-	}{
-		{"non-empty value", "testvalue", "fallback", "testvalue"},
-		{"empty value", "", "fallback", "fallback"},
-		{"whitespace only", "   ", "fallback", "fallback"},
-		{"whitespace with content", " test ", "fallback", " test "},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := valueOrFallback(tt.value, tt.fallback); got != tt.want {
-				t.Errorf("valueOrFallback(%q, %q) = %q, want %q", tt.value, tt.fallback, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestFormatAddress(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -406,5 +385,19 @@ func TestFormatAddress(t *testing.T) {
 				t.Errorf("formatAddress(%+v, %v) = %q, want %q", tt.addr, tt.withInterface, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSystemSectionOmitsUnavailableData(t *testing.T) {
+	// A timed-out system collector leaves the snapshot zero-valued; the
+	// section must not invent an epoch timestamp or unknown user.
+	section, ok := SystemSectionBuilder{}.Build(collectors.Snapshot{}, config.Default())
+	if !ok {
+		return // nothing to render is acceptable
+	}
+	for _, line := range section.Lines {
+		if strings.Contains(line, "0001") || strings.Contains(line, "unknown") {
+			t.Fatalf("section renders placeholder data: %q", line)
+		}
 	}
 }

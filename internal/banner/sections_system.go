@@ -26,14 +26,16 @@ func (SystemSectionBuilder) Build(snap collectors.Snapshot, cfg config.Config) (
 	if cfg.Display.Uptime && snap.System.Uptime > 0 {
 		lines = append(lines, fmt.Sprintf("Uptime: %s", humanDuration(snap.System.Uptime)))
 	}
-	if cfg.Display.User {
-		userLine := fmt.Sprintf("User: %s", valueOrFallback(snap.System.CurrentUser, "unknown"))
+	if cfg.Display.User && strings.TrimSpace(snap.System.CurrentUser) != "" {
+		userLine := fmt.Sprintf("User: %s", snap.System.CurrentUser)
 		if snap.System.HomeDir != "" {
 			userLine += " " + snap.System.HomeDir
 		}
 		lines = append(lines, userLine)
 	}
-	if cfg.Display.Datetime {
+	// A timed-out system collector leaves Datetime zero; omit the line
+	// rather than print the epoch.
+	if cfg.Display.Datetime && !snap.System.Datetime.IsZero() {
 		lines = append(lines, fmt.Sprintf("Time: %s", snap.System.Datetime.Format(time.RFC1123)))
 	}
 	if cfg.Display.LastLogin && snap.LastLogin != nil {
@@ -95,13 +97,6 @@ func humanDuration(d time.Duration) string {
 		segments = append(segments, fmt.Sprintf("%dm", mins))
 	}
 	return strings.Join(segments, " ")
-}
-
-func valueOrFallback(value, fallback string) string {
-	if strings.TrimSpace(value) == "" {
-		return fallback
-	}
-	return value
 }
 
 func formatAddress(addr collectors.Address, withInterface bool) string {
