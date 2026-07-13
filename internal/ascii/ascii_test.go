@@ -283,3 +283,29 @@ func TestLerpStops(t *testing.T) {
 		t.Errorf("t=1 should equal last stop, got %v want %v", end, white)
 	}
 }
+
+func TestRendererNonASCIITextUsesPlainHeader(t *testing.T) {
+	r := mustRenderer(t)
+	// go-figure's strict mode log.Fatals on non-ASCII, and non-strict mode
+	// silently drops characters; both are wrong. Non-ASCII text must render
+	// via the plain header with its content intact.
+	for _, text := range []string{"日本語のホスト", "web-サーバ", "café-host"} {
+		art, err := r.Render(text, RenderOptions{
+			Font:     "ANSI Regular",
+			MaxWidth: 40,
+			Profile:  terminal.ProfileNoColor,
+		})
+		if err != nil {
+			t.Fatalf("Render(%q) error = %v", text, err)
+		}
+		if art.Font != plainFont {
+			t.Errorf("Render(%q): expected plain header, got font %q", text, art.Font)
+		}
+		if !strings.Contains(art.Text, text) {
+			t.Errorf("Render(%q): text not preserved verbatim: %q", text, art.Text)
+		}
+		if art.Width > 40 {
+			t.Errorf("Render(%q): overflows at %d columns", text, art.Width)
+		}
+	}
+}

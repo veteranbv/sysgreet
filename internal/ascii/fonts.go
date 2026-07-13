@@ -96,6 +96,13 @@ func (r *Renderer) Render(text string, opts RenderOptions) (Art, error) {
 		text = strings.ToUpper(text)
 	}
 
+	// FIGlet fonts cover printable ASCII; rendering anything else would
+	// silently drop characters, so such text goes straight to the plain
+	// header, which preserves it verbatim.
+	if !fontRenderable(text) {
+		return r.plainHeader(text, text, opts), nil
+	}
+
 	texts := []string{text}
 	if opts.ShortenDomain {
 		if short := shortName(text); short != text {
@@ -107,6 +114,11 @@ func (r *Renderer) Render(text string, opts RenderOptions) (Art, error) {
 		for _, candidate := range texts {
 			rows := r.rows(candidate, font)
 			width := maxRowWidth(rows)
+			if width == 0 {
+				// FIGlet fonts only cover ASCII; text that renders to
+				// nothing (e.g. CJK) falls through to the plain header.
+				continue
+			}
 			if opts.MaxWidth > 0 && width > opts.MaxWidth {
 				continue
 			}
@@ -156,8 +168,11 @@ func (r *Renderer) resolveFont(name string) string {
 	return r.order[0]
 }
 
+// rows renders text with a font in non-strict mode: characters the font
+// does not cover are dropped rather than aborting the process (go-figure's
+// strict mode calls log.Fatal on non-ASCII input).
 func (r *Renderer) rows(text, font string) []string {
-	fig := figure.NewFigureWithFont(text, bytes.NewReader(r.fonts[font]), true)
+	fig := figure.NewFigureWithFont(text, bytes.NewReader(r.fonts[font]), false)
 	return fig.Slicify()
 }
 
@@ -169,6 +184,17 @@ func maxRowWidth(rows []string) int {
 		}
 	}
 	return widest
+}
+
+// fontRenderable reports whether every rune falls in the printable ASCII
+// range the embedded FIGlet fonts cover.
+func fontRenderable(text string) bool {
+	for _, r := range text {
+		if r < ' ' || r > '~' {
+			return false
+		}
+	}
+	return true
 }
 
 // shortName drops everything after the first dot, so pve1.home.lan renders
