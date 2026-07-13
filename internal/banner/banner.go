@@ -76,13 +76,14 @@ func (b *Banner) buildHeader(snap collectors.Snapshot, cfg config.Config, env te
 		name = "sysgreet"
 	}
 	art, err := b.ascii.Render(name, ascii.RenderOptions{
-		Font:       cfg.ASCII.Font,
-		Color:      cfg.ASCII.Color,
-		Gradient:   cfg.ASCII.Gradient,
-		Monochrome: cfg.ASCII.Monochrome,
-		Uppercase:  true,
-		MaxWidth:   effectiveWidth(cfg, env),
-		Profile:    env.Profile,
+		Font:          cfg.ASCII.Font,
+		Color:         cfg.ASCII.Color,
+		Gradient:      cfg.ASCII.Gradient,
+		Monochrome:    cfg.ASCII.Monochrome,
+		Uppercase:     true,
+		MaxWidth:      effectiveWidth(cfg, env),
+		ShortenDomain: true,
+		Profile:       env.Profile,
 	})
 	if err != nil {
 		// Fallback to plain text when ASCII rendering fails.

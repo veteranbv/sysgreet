@@ -104,10 +104,11 @@ func TestRendererFitsWithinMaxWidth(t *testing.T) {
 func TestRendererShortensDomainToFit(t *testing.T) {
 	r := mustRenderer(t)
 	art, err := r.Render("pve1.home.lan", RenderOptions{
-		Font:      "ANSI Regular",
-		Uppercase: true,
-		MaxWidth:  60,
-		Profile:   terminal.ProfileNoColor,
+		Font:          "ANSI Regular",
+		Uppercase:     true,
+		MaxWidth:      60,
+		ShortenDomain: true,
+		Profile:       terminal.ProfileNoColor,
 	})
 	if err != nil {
 		t.Fatalf("Render() error = %v", err)
@@ -117,6 +118,30 @@ func TestRendererShortensDomainToFit(t *testing.T) {
 	}
 	if art.Width > 60 {
 		t.Fatalf("shortened art still overflows: %d columns", art.Width)
+	}
+}
+
+func TestRendererNeverShortensLiteralText(t *testing.T) {
+	r := mustRenderer(t)
+	// --text content must survive verbatim: a dotted string squeezed into
+	// a tiny width may shrink or clip, but never lose everything after
+	// the first dot.
+	art, err := r.Render("v2.1.0-rc.1", RenderOptions{
+		Font:     "ANSI Regular",
+		MaxWidth: 30,
+		Profile:  terminal.ProfileNoColor,
+	})
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	if art.Shortened {
+		t.Fatalf("literal text was shortened at a dot: %q", art.Text)
+	}
+	if !strings.Contains(terminal.Strip(art.Text), "v2.1") {
+		t.Fatalf("literal text lost its dotted content: %q", art.Text)
+	}
+	if art.Width > 30 {
+		t.Fatalf("literal text overflows: %d columns", art.Width)
 	}
 }
 

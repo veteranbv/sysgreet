@@ -429,3 +429,56 @@ func TestRenderJSON(t *testing.T) {
 		t.Errorf("JSON sections not in layout order:\n%s", doc)
 	}
 }
+
+func TestRenderer_CompactClipsToWidth(t *testing.T) {
+	out := banner.Output{
+		Header: banner.Header{
+			Hostname: "pve1",
+			Lines:    []string{"Linux 6.8 (x86_64)"},
+		},
+		Sections: []banner.Section{
+			{Key: "system", Title: "System", Lines: []string{
+				"Uptime: 4d 12h 30m",
+				"Last login: Fri, 10 Oct 2025 09:45:00 PDT (203.0.113.10)",
+			}},
+		},
+	}
+	cfg := config.Config{Layout: config.LayoutConfig{Compact: true}}
+	result := NewRenderer(terminal.Env{Width: 50}).Render(out, cfg)
+
+	if n := len([]rune(result)); n > 50 {
+		t.Errorf("compact line exceeds width 50 (%d): %q", n, result)
+	}
+	if !strings.HasSuffix(result, "…") {
+		t.Errorf("expected clipped compact line to end with ellipsis: %q", result)
+	}
+}
+
+func TestApplyConfig(t *testing.T) {
+	base := terminal.Env{Width: 120, Profile: terminal.ProfileANSI}
+
+	capped := ApplyConfig(base, config.Config{Layout: config.LayoutConfig{MaxWidth: 80}})
+	if capped.Width != 80 {
+		t.Errorf("max_width should cap detected width: got %d", capped.Width)
+	}
+
+	wider := ApplyConfig(base, config.Config{Layout: config.LayoutConfig{MaxWidth: 200}})
+	if wider.Width != 120 {
+		t.Errorf("max_width above terminal width must not widen: got %d", wider.Width)
+	}
+
+	unknown := ApplyConfig(terminal.Env{Profile: terminal.ProfileANSI}, config.Config{Layout: config.LayoutConfig{MaxWidth: 80}})
+	if unknown.Width != 80 {
+		t.Errorf("max_width should apply when terminal width is unknown: got %d", unknown.Width)
+	}
+
+	mono := ApplyConfig(base, config.Config{ASCII: config.ASCIIConfig{Monochrome: true}})
+	if mono.Profile != terminal.ProfileNoColor {
+		t.Errorf("monochrome config should force ProfileNoColor, got %v", mono.Profile)
+	}
+
+	untouched := ApplyConfig(base, config.Config{})
+	if untouched != base {
+		t.Errorf("empty config should leave env unchanged: %+v", untouched)
+	}
+}

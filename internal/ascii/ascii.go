@@ -11,6 +11,10 @@ type RenderOptions struct {
 	Uppercase  bool
 	// MaxWidth caps the art width in columns. Zero means unconstrained.
 	MaxWidth int
+	// ShortenDomain allows the width ladder to drop everything after the
+	// first dot (pve1.home.lan -> pve1). Only hostname rendering sets
+	// this; user-supplied --text must never be rewritten.
+	ShortenDomain bool
 	// Profile gates color output for the target terminal.
 	Profile terminal.Profile
 }

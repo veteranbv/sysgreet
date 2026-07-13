@@ -24,6 +24,19 @@ func NewRenderer(env terminal.Env) Renderer {
 	return Renderer{colorizer: NewColorizer(env.Profile), width: env.Width}
 }
 
+// ApplyConfig folds config-driven constraints into the detected terminal
+// environment: layout.max_width caps the width and ascii.monochrome forces
+// plain output everywhere, including resource threshold highlights.
+func ApplyConfig(env terminal.Env, cfg config.Config) terminal.Env {
+	if max := cfg.Layout.MaxWidth; max > 0 && (env.Width == 0 || max < env.Width) {
+		env.Width = max
+	}
+	if cfg.ASCII.Monochrome {
+		env.Profile = terminal.ProfileNoColor
+	}
+	return env
+}
+
 // Render produces the final banner string.
 func (r Renderer) Render(out banner.Output, cfg config.Config) string {
 	if cfg.Layout.Compact {
@@ -75,7 +88,7 @@ func (r Renderer) renderCompact(out banner.Output, cfg config.Config) string {
 		parts = append(parts, section.Title)
 		parts = append(parts, section.Lines...)
 	}
-	return strings.Join(parts, " | ")
+	return r.clip(strings.Join(parts, " | "), 0)
 }
 
 // clip truncates a line to the terminal width, accounting for indent and

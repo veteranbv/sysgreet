@@ -69,13 +69,15 @@ func run() error {
 	// to plain output rather than printing raw escapes.
 	ansiOK := enableVirtualTerminal(os.Stdout)
 	env := terminal.DetectEnv(os.Stdout, settings.NoColor || !ansiOK)
-	if settings.Width > 0 {
-		env.Width = settings.Width
-	}
 
 	cfg, err := loadConfig(ctx, settings)
 	if err != nil {
 		return err
+	}
+	env = render.ApplyConfig(env, cfg)
+	if settings.Width > 0 {
+		// The flag wins over both the detected width and layout.max_width.
+		env.Width = settings.Width
 	}
 
 	if settings.Text != "" {

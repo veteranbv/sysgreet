@@ -97,8 +97,10 @@ func (r *Renderer) Render(text string, opts RenderOptions) (Art, error) {
 	}
 
 	texts := []string{text}
-	if short := shortName(text); short != text {
-		texts = append(texts, short)
+	if opts.ShortenDomain {
+		if short := shortName(text); short != text {
+			texts = append(texts, short)
+		}
 	}
 
 	for _, font := range r.fontLadder(opts.Font) {
