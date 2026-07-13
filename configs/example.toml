@@ -13,7 +13,10 @@ datetime = true
 last_login = true
 
 [ascii]
-# Font options: "ANSI Regular", "ANSI Shadow", "Block", "DOS Rebel", "Basic", "standard", "slant"
+# Font options: "ANSI Regular", "ANSI Shadow", "Banner", "Basic", "Block",
+# "Blocks", "DOS Rebel", "Small", "standard", "slant" (or run --list-fonts).
+# When the terminal is too narrow for this font, sysgreet automatically
+# steps down: shorter hostname, then a narrower font, then a plain header.
 font = "ANSI Regular"
 
 # Gradient: cycle colors per line (overrides 'color' if set)
@@ -27,6 +30,8 @@ monochrome = false
 
 [layout]
 compact = false
+# Cap the banner width in columns. 0 means use the detected terminal width.
+max_width = 0
 sections = ["header", "network", "system", "resources"]
 
 [network]

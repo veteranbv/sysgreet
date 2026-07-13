@@ -6,16 +6,22 @@ import (
 
 	"github.com/veteranbv/sysgreet/internal/banner"
 	"github.com/veteranbv/sysgreet/internal/config"
+	"github.com/veteranbv/sysgreet/internal/terminal"
 )
+
+// bodyIndent prefixes every section line in the full layout.
+const bodyIndent = "  "
 
 // Renderer formats banner output into terminal-friendly text.
 type Renderer struct {
 	colorizer Colorizer
+	width     int
 }
 
-// NewRenderer instantiates a renderer with optional color suppression.
-func NewRenderer(disableColor bool) Renderer {
-	return Renderer{colorizer: NewColorizer(disableColor)}
+// NewRenderer instantiates a renderer for the given terminal environment.
+// A zero env.Width leaves lines unclipped.
+func NewRenderer(env terminal.Env) Renderer {
+	return Renderer{colorizer: NewColorizer(env.Profile), width: env.Width}
 }
 
 // Render produces the final banner string.
@@ -30,7 +36,7 @@ func (r Renderer) Render(out banner.Output, cfg config.Config) string {
 	if len(out.Header.Lines) > 0 {
 		builder.WriteString("\n")
 		for _, line := range out.Header.Lines {
-			builder.WriteString(line)
+			builder.WriteString(r.clip(line, 0))
 			builder.WriteString("\n")
 		}
 	}
@@ -44,11 +50,11 @@ func (r Renderer) Render(out banner.Output, cfg config.Config) string {
 		builder.WriteString(section.Title)
 		builder.WriteString("\n")
 		for _, line := range section.Lines {
-			formatted := line
+			formatted := r.clip(line, len(bodyIndent))
 			if section.Key == "resources" {
-				formatted = r.highlightResource(section, line)
+				formatted = r.highlightResource(section, formatted)
 			}
-			builder.WriteString("  ")
+			builder.WriteString(bodyIndent)
 			builder.WriteString(formatted)
 			builder.WriteString("\n")
 		}
@@ -56,8 +62,10 @@ func (r Renderer) Render(out banner.Output, cfg config.Config) string {
 	return strings.TrimRight(builder.String(), "\n")
 }
 
+// renderCompact emits a single pipe-separated line using the plain hostname
+// rather than the multi-line art.
 func (r Renderer) renderCompact(out banner.Output, cfg config.Config) string {
-	parts := []string{Strip(out.Header.Art)}
+	parts := []string{strings.ToUpper(out.Header.Hostname)}
 	parts = append(parts, out.Header.Lines...)
 	sections := orderSections(out.Sections, cfg.Layout.Sections)
 	for _, section := range sections {
@@ -68,6 +76,26 @@ func (r Renderer) renderCompact(out banner.Output, cfg config.Config) string {
 		parts = append(parts, section.Lines...)
 	}
 	return strings.Join(parts, " | ")
+}
+
+// clip truncates a line to the terminal width, accounting for indent and
+// marking the cut with an ellipsis. Zero width leaves the line untouched.
+func (r Renderer) clip(line string, indent int) string {
+	if r.width <= 0 {
+		return line
+	}
+	limit := r.width - indent
+	if limit < 1 {
+		limit = 1
+	}
+	runes := []rune(line)
+	if len(runes) <= limit {
+		return line
+	}
+	if limit == 1 {
+		return "…"
+	}
+	return string(runes[:limit-1]) + "…"
 }
 
 func orderSections(sections []banner.Section, desired []string) []banner.Section {

@@ -13,6 +13,7 @@ import (
 	"github.com/veteranbv/sysgreet/internal/collectors"
 	"github.com/veteranbv/sysgreet/internal/config"
 	"github.com/veteranbv/sysgreet/internal/render"
+	"github.com/veteranbv/sysgreet/internal/terminal"
 )
 
 func TestSessionCollectorFallsBackToSSHClient(t *testing.T) {
@@ -103,11 +104,11 @@ layout.sections = ["network", "system"]
 	if err != nil {
 		t.Fatalf("banner.New: %v", err)
 	}
-	out, _, err := b.Build(context.Background(), cfg)
+	out, _, err := b.Build(context.Background(), cfg, terminal.Env{})
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
-	result := render.NewRenderer(true).Render(out, cfg)
+	result := render.NewRenderer(terminal.Env{}).Render(out, cfg)
 	if strings.Contains(result, "Mem:") {
 		t.Fatalf("expected memory data suppressed, got %s", result)
 	}

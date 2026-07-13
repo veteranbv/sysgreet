@@ -126,3 +126,54 @@ func TestDefaultWritePathFallsBackToHome(t *testing.T) {
 		t.Fatalf("expected %s, got %s", expected, got)
 	}
 }
+
+func TestLoad_MaxWidthFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	cfgDir := dir + "/.config/sysgreet"
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	content := []byte(`layout:
+  max_width: 100
+`)
+	if err := os.WriteFile(cfgDir+"/config.yaml", content, 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Layout.MaxWidth != 100 {
+		t.Fatalf("expected max_width 100, got %d", cfg.Layout.MaxWidth)
+	}
+}
+
+func TestLoad_MaxWidthFromEnv(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("SYSGREET_LAYOUT_MAX_WIDTH", "90")
+
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Layout.MaxWidth != 90 {
+		t.Fatalf("expected max_width 90 from env, got %d", cfg.Layout.MaxWidth)
+	}
+}
+
+func TestLoad_MaxWidthRejectsNegative(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("SYSGREET_LAYOUT_MAX_WIDTH", "-5")
+
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Layout.MaxWidth != 0 {
+		t.Fatalf("negative max_width should be ignored, got %d", cfg.Layout.MaxWidth)
+	}
+}
