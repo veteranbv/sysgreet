@@ -361,3 +361,39 @@ func TestBinaryNoColorFlag(t *testing.T) {
 		t.Errorf("--no-color output contains escape sequences")
 	}
 }
+
+func TestBinaryJSONIsWidthIndependent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping binary build in short mode")
+	}
+	tmpDir := t.TempDir()
+	binaryPath := buildTestBinary(t, tmpDir)
+
+	headerFor := func(args ...string) []string {
+		t.Helper()
+		cmd := exec.Command(binaryPath, append([]string{"--json"}, args...)...)
+		cmd.Env = append(os.Environ(), "SYSGREET_CONFIG="+filepath.Join(tmpDir, "config.yaml"), "CI=1")
+		output, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("--json %v run failed: %v", args, err)
+		}
+		var doc struct {
+			Header []string `json:"header"`
+		}
+		if err := json.Unmarshal(output, &doc); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+		return doc.Header
+	}
+
+	wide := headerFor("--width", "200")
+	narrow := headerFor("--width", "20")
+	if len(wide) != len(narrow) {
+		t.Fatalf("JSON header depends on terminal width: %v vs %v", wide, narrow)
+	}
+	for i := range wide {
+		if wide[i] != narrow[i] {
+			t.Fatalf("JSON header depends on terminal width: %v vs %v", wide, narrow)
+		}
+	}
+}

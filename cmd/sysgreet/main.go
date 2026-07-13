@@ -84,7 +84,13 @@ func run() error {
 		return runTextMode(renderer, settings.Text, cfg, env)
 	}
 
-	output, err := buildBanner(ctx, renderer, cfg, env, settings.Demo)
+	buildEnv := env
+	if settings.JSON {
+		// Scripted output must not vary with terminal geometry or color
+		// support; build against a neutral environment.
+		buildEnv = terminal.Env{}
+	}
+	output, err := buildBanner(ctx, renderer, cfg, buildEnv, settings.Demo)
 	if err != nil {
 		return err
 	}
