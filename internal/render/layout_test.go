@@ -6,6 +6,7 @@ import (
 
 	"github.com/veteranbv/sysgreet/internal/banner"
 	"github.com/veteranbv/sysgreet/internal/config"
+	"github.com/veteranbv/sysgreet/internal/terminal"
 )
 
 func TestRenderer_Render(t *testing.T) {
@@ -85,7 +86,7 @@ func TestRenderer_Render(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := NewRenderer(true) // Disable color for deterministic output
+			r := NewRenderer(terminal.Env{}) // No color for deterministic output
 			result := r.Render(tt.output, tt.cfg)
 
 			for _, want := range tt.wantContains {
@@ -109,8 +110,9 @@ func TestRenderer_RenderCompact(t *testing.T) {
 			name: "compact mode with separator",
 			output: banner.Output{
 				Header: banner.Header{
-					Art:   "HOST",
-					Lines: []string{"Linux 6.0"},
+					Hostname: "host",
+					Art:      "line1\nline2\nline3",
+					Lines:    []string{"Linux 6.0"},
 				},
 				Sections: []banner.Section{
 					{
@@ -132,7 +134,7 @@ func TestRenderer_RenderCompact(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := NewRenderer(true)
+			r := NewRenderer(terminal.Env{})
 			result := r.Render(tt.output, tt.cfg)
 
 			for _, want := range tt.wantContains {
@@ -282,7 +284,7 @@ func TestRenderer_HighlightResource(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := NewRenderer(tt.disableColor)
+			r := NewRenderer(envFor(tt.disableColor))
 			result := r.highlightResource(tt.section, tt.line)
 
 			if !strings.Contains(result, tt.wantContains) {
@@ -314,7 +316,7 @@ func TestRenderer_WrapForPercent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := NewRenderer(tt.disableColor)
+			r := NewRenderer(envFor(tt.disableColor))
 			result := r.wrapForPercent(tt.pct, tt.line)
 
 			hasColor := result != tt.line
@@ -322,5 +324,108 @@ func TestRenderer_WrapForPercent(t *testing.T) {
 				t.Errorf("wrapForPercent(%d, %q) hasColor=%v, want %v", tt.pct, tt.line, hasColor, tt.wantColor)
 			}
 		})
+	}
+}
+
+// envFor maps the old disable-color boolean used across these tests to a
+// terminal environment.
+func envFor(disable bool) terminal.Env {
+	if disable {
+		return terminal.Env{}
+	}
+	return terminal.Env{Profile: terminal.ProfileANSI}
+}
+
+func TestRenderer_CompactIsSingleLine(t *testing.T) {
+	out := banner.Output{
+		Header: banner.Header{
+			Hostname: "pve1",
+			Art:      "██\n██\n██",
+			Lines:    []string{"Linux 6.8"},
+		},
+		Sections: []banner.Section{
+			{Key: "system", Title: "System", Lines: []string{"Uptime: 1d"}},
+		},
+	}
+	cfg := config.Config{Layout: config.LayoutConfig{Compact: true}}
+	result := NewRenderer(terminal.Env{}).Render(out, cfg)
+
+	if strings.Contains(result, "\n") {
+		t.Fatalf("compact output must be a single line, got:\n%s", result)
+	}
+	if !strings.Contains(result, "PVE1") {
+		t.Errorf("compact output missing hostname, got: %s", result)
+	}
+	if strings.Contains(result, "██") {
+		t.Errorf("compact output must not include ASCII art, got: %s", result)
+	}
+}
+
+func TestRenderer_ClipsBodyLinesToWidth(t *testing.T) {
+	out := banner.Output{
+		Header: banner.Header{Hostname: "host", Art: "HOST"},
+		Sections: []banner.Section{
+			{
+				Key:   "system",
+				Title: "System",
+				Lines: []string{"Last login: Fri, 10 Oct 2025 09:45:00 PDT from 203.0.113.10"},
+			},
+		},
+	}
+	cfg := config.Default()
+	result := NewRenderer(terminal.Env{Width: 40}).Render(out, cfg)
+
+	for _, line := range strings.Split(result, "\n") {
+		if n := len([]rune(line)); n > 40 {
+			t.Errorf("line exceeds width 40 (%d): %q", n, line)
+		}
+	}
+	if !strings.Contains(result, "…") {
+		t.Errorf("expected clipped line to end with ellipsis, got:\n%s", result)
+	}
+}
+
+func TestRenderer_UnconstrainedLeavesLinesAlone(t *testing.T) {
+	long := "Last login: Fri, 10 Oct 2025 09:45:00 PDT from 203.0.113.10"
+	out := banner.Output{
+		Header: banner.Header{Hostname: "host", Art: "HOST"},
+		Sections: []banner.Section{
+			{Key: "system", Title: "System", Lines: []string{long}},
+		},
+	}
+	result := NewRenderer(terminal.Env{}).Render(out, config.Default())
+	if !strings.Contains(result, long) {
+		t.Errorf("unconstrained render should not clip lines, got:\n%s", result)
+	}
+}
+
+func TestRenderJSON(t *testing.T) {
+	out := banner.Output{
+		Header: banner.Header{
+			Hostname: "pve1",
+			Art:      "ART",
+			Lines:    []string{"Linux 6.8 (x86_64)"},
+		},
+		Sections: []banner.Section{
+			{Key: "resources", Title: "Resources", Lines: []string{"Mem: 23% used"}, Data: map[string]any{"memory_used_percent": 23}},
+			{Key: "system", Title: "System", Lines: []string{"Uptime: 1d"}},
+		},
+	}
+	cfg := config.Default()
+	doc, err := RenderJSON(out, cfg)
+	if err != nil {
+		t.Fatalf("RenderJSON error: %v", err)
+	}
+	for _, want := range []string{`"hostname": "pve1"`, `"Linux 6.8 (x86_64)"`, `"memory_used_percent": 23`} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("JSON missing %q:\n%s", want, doc)
+		}
+	}
+	if strings.Contains(doc, "ART") {
+		t.Errorf("JSON should not include ASCII art:\n%s", doc)
+	}
+	// Sections must follow the configured order: system before resources.
+	if strings.Index(doc, `"key": "system"`) > strings.Index(doc, `"key": "resources"`) {
+		t.Errorf("JSON sections not in layout order:\n%s", doc)
 	}
 }

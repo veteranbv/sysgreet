@@ -1,9 +1,11 @@
 package integration
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -229,4 +231,133 @@ func TestBinaryMemoryFootprint(t *testing.T) {
 	}
 
 	t.Logf("Binary size: %.2f MB", sizeMB)
+}
+
+// buildTestBinary compiles sysgreet into dir and returns its path.
+func buildTestBinary(t *testing.T, dir string) string {
+	t.Helper()
+	binaryPath := filepath.Join(dir, "sysgreet")
+	buildCmd := exec.Command("go", "build", "-o", binaryPath, "../../cmd/sysgreet")
+	if output, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("failed to build binary: %v\nOutput: %s", err, output)
+	}
+	return binaryPath
+}
+
+func TestBinaryJSONOutput(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping binary build in short mode")
+	}
+	tmpDir := t.TempDir()
+	binaryPath := buildTestBinary(t, tmpDir)
+
+	cmd := exec.Command(binaryPath, "--json")
+	cmd.Env = append(os.Environ(), "SYSGREET_CONFIG="+filepath.Join(tmpDir, "config.yaml"), "CI=1")
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("--json run failed: %v", err)
+	}
+
+	var doc struct {
+		Hostname string `json:"hostname"`
+		Sections []struct {
+			Key   string   `json:"key"`
+			Lines []string `json:"lines"`
+		} `json:"sections"`
+	}
+	if err := json.Unmarshal(output, &doc); err != nil {
+		t.Fatalf("--json output is not valid JSON: %v\nOutput: %s", err, output)
+	}
+	if doc.Hostname == "" {
+		t.Errorf("JSON output missing hostname: %s", output)
+	}
+	if strings.Contains(string(output), "\033") {
+		t.Errorf("JSON output contains escape sequences")
+	}
+}
+
+func TestBinaryWidthNeverOverflows(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping binary build in short mode")
+	}
+	tmpDir := t.TempDir()
+	binaryPath := buildTestBinary(t, tmpDir)
+
+	for _, width := range []string{"30", "50", "80"} {
+		cmd := exec.Command(binaryPath, "--text", "media-server-vault-01", "--width", width)
+		output, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("--width %s run failed: %v", width, err)
+		}
+		limit, _ := strconv.Atoi(width)
+		for _, line := range strings.Split(string(output), "\n") {
+			if n := len([]rune(line)); n > limit {
+				t.Errorf("--width %s: line has %d columns: %q", width, n, line)
+			}
+		}
+	}
+}
+
+func TestBinaryListFonts(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping binary build in short mode")
+	}
+	tmpDir := t.TempDir()
+	binaryPath := buildTestBinary(t, tmpDir)
+
+	output, err := exec.Command(binaryPath, "--list-fonts").Output()
+	if err != nil {
+		t.Fatalf("--list-fonts run failed: %v", err)
+	}
+	for _, want := range []string{"ANSI Regular", "standard", "Small"} {
+		if !strings.Contains(string(output), want) {
+			t.Errorf("--list-fonts missing %q\nGot: %s", want, output)
+		}
+	}
+}
+
+func TestBinaryTextModeHonorsConfigFont(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping binary build in short mode")
+	}
+	tmpDir := t.TempDir()
+	binaryPath := buildTestBinary(t, tmpDir)
+
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	config := "ascii:\n  font: \"standard\"\n  monochrome: true\n"
+	if err := os.WriteFile(configPath, []byte(config), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cmd := exec.Command(binaryPath, "--text", "hi")
+	cmd.Env = append(os.Environ(), "SYSGREET_CONFIG="+configPath, "CI=1")
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("--text run failed: %v", err)
+	}
+	// The standard font draws with slashes and underscores, not the solid
+	// blocks of the default ANSI Regular.
+	if strings.Contains(string(output), "█") {
+		t.Errorf("--text ignored the configured font\nGot: %s", output)
+	}
+	if !strings.Contains(string(output), "_") {
+		t.Errorf("expected standard-font glyphs in output\nGot: %s", output)
+	}
+}
+
+func TestBinaryNoColorFlag(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping binary build in short mode")
+	}
+	tmpDir := t.TempDir()
+	binaryPath := buildTestBinary(t, tmpDir)
+
+	cmd := exec.Command(binaryPath, "--demo", "--no-color")
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("--no-color run failed: %v", err)
+	}
+	if strings.Contains(string(output), "\033") {
+		t.Errorf("--no-color output contains escape sequences")
+	}
 }

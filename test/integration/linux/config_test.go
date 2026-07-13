@@ -12,6 +12,7 @@ import (
 	"github.com/veteranbv/sysgreet/internal/collectors"
 	"github.com/veteranbv/sysgreet/internal/config"
 	"github.com/veteranbv/sysgreet/internal/render"
+	"github.com/veteranbv/sysgreet/internal/terminal"
 )
 
 func TestYAMLConfigDisablesNetworkSections(t *testing.T) {
@@ -59,11 +60,11 @@ layout:
 	if err != nil {
 		t.Fatalf("banner.New: %v", err)
 	}
-	out, _, err := b.Build(context.Background(), cfg)
+	out, _, err := b.Build(context.Background(), cfg, terminal.Env{})
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
-	txt := render.NewRenderer(true).Render(out, cfg)
+	txt := render.NewRenderer(terminal.Env{}).Render(out, cfg)
 	if strings.Contains(txt, "System") {
 		t.Fatalf("expected system section to be disabled, got %s", txt)
 	}

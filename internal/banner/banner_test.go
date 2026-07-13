@@ -2,12 +2,14 @@ package banner
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/veteranbv/sysgreet/internal/ascii"
 	"github.com/veteranbv/sysgreet/internal/collectors"
 	"github.com/veteranbv/sysgreet/internal/config"
+	"github.com/veteranbv/sysgreet/internal/terminal"
 )
 
 func TestNew(t *testing.T) {
@@ -140,7 +142,7 @@ func TestBanner_Build(t *testing.T) {
 				t.Fatalf("New() error = %v", err)
 			}
 
-			output, snap, err := banner.Build(context.Background(), tt.cfg)
+			output, snap, err := banner.Build(context.Background(), tt.cfg, terminal.Env{})
 			if err != nil {
 				t.Fatalf("Build() error = %v", err)
 			}
@@ -233,7 +235,7 @@ func TestBanner_buildHeader(t *testing.T) {
 				},
 			}
 
-			header := banner.buildHeader(snap, cfg)
+			header := banner.buildHeader(snap, cfg, terminal.Env{})
 
 			if header.Art == "" {
 				t.Error("expected non-empty ASCII art")
@@ -333,4 +335,50 @@ func mustRenderer(t *testing.T) *ascii.Renderer {
 		t.Fatalf("failed to create renderer: %v", err)
 	}
 	return r
+}
+
+func TestBanner_buildHeaderShortensForNarrowTerminal(t *testing.T) {
+	b, err := New(collectors.Providers{}, mustRenderer(t), nil)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	snap := collectors.Snapshot{
+		System: collectors.SystemInfo{Hostname: "pve1.home.lan"},
+	}
+	cfg := config.Default()
+
+	header := b.buildHeader(snap, cfg, terminal.Env{Width: 60})
+
+	if header.Hostname != "pve1.home.lan" {
+		t.Errorf("header.Hostname = %q, want full name", header.Hostname)
+	}
+	found := false
+	for _, line := range header.Lines {
+		if line == "pve1.home.lan" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected full hostname line when art is shortened, lines = %v", header.Lines)
+	}
+}
+
+func TestBanner_buildHeaderRespectsConfiguredMaxWidth(t *testing.T) {
+	b, err := New(collectors.Providers{}, mustRenderer(t), nil)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	snap := collectors.Snapshot{
+		System: collectors.SystemInfo{Hostname: "media-server-vault-01"},
+	}
+	cfg := config.Default()
+	cfg.Layout.MaxWidth = 40
+
+	header := b.buildHeader(snap, cfg, terminal.Env{Width: 200})
+
+	for _, line := range strings.Split(header.Art, "\n") {
+		if n := len([]rune(line)); n > 40 {
+			t.Errorf("art line exceeds layout.max_width 40 (%d): %q", n, line)
+		}
+	}
 }
