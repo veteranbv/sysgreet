@@ -497,3 +497,23 @@ func TestRenderer_ClipsSectionTitles(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderer_CompactDoesNotDuplicateHostname(t *testing.T) {
+	out := banner.Output{
+		Header: banner.Header{
+			Hostname: "pve1.home.lan",
+			// The width ladder shortened the art, so the full hostname was
+			// added as an info line.
+			Lines: []string{"pve1.home.lan", "Linux 6.8 (x86_64)"},
+		},
+	}
+	cfg := config.Config{Layout: config.LayoutConfig{Compact: true}}
+	result := NewRenderer(terminal.Env{}).Render(out, cfg)
+
+	if strings.Count(strings.ToLower(result), "pve1.home.lan") != 1 {
+		t.Fatalf("compact output repeats the hostname: %q", result)
+	}
+	if !strings.Contains(result, "Linux 6.8 (x86_64)") {
+		t.Fatalf("compact output lost the OS line: %q", result)
+	}
+}

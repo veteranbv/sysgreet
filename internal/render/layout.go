@@ -79,7 +79,14 @@ func (r Renderer) Render(out banner.Output, cfg config.Config) string {
 // rather than the multi-line art.
 func (r Renderer) renderCompact(out banner.Output, cfg config.Config) string {
 	parts := []string{strings.ToUpper(out.Header.Hostname)}
-	parts = append(parts, out.Header.Lines...)
+	for _, line := range out.Header.Lines {
+		// The full-hostname fallback line exists to supplement shortened
+		// art; compact output already leads with the full name.
+		if line == out.Header.Hostname {
+			continue
+		}
+		parts = append(parts, line)
+	}
 	sections := orderSections(out.Sections, cfg.Layout.Sections)
 	for _, section := range sections {
 		if len(section.Lines) == 0 {
