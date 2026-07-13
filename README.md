@@ -38,17 +38,26 @@ network or depending on external runtimes.
 
 - **Single static binary** - Go 1.22+, no CGO, no daemons, no service
   dependencies.
+- **Fits any terminal** - Sysgreet measures the terminal before printing and
+  steps the banner down gracefully (shorter hostname, then a narrower font,
+  then a clean one-line header) instead of wrapping ASCII art into garbage.
+  Split tmux panes and phone SSH sessions stay readable.
 - **Cross-platform parity** - Linux/macOS show load averages; Windows surfaces
-  CPU usage. Interface filtering avoids noisy virtual adapters everywhere.
+  CPU usage (and legacy consoles get plain text instead of raw escape codes).
+  Interface filtering avoids noisy virtual adapters everywhere.
 - **Configurable yet optional** - YAML or TOML profiles toggle sections, pick
   fonts/colors, set layout order, and cap the interface list. Defaults "just
   work" with zero files.
 - **Graceful degradation** - Missing metrics or SSH metadata simply fall back;
   the banner keeps rendering.
-- **Performance-guarded** - Startup benchmark (<50 ms median, <80 ms p95) runs in
-  CI; process RSS stays <15 MB.
-- **Professional aesthetics** - Unicode block fonts with gradient colors,
-  automatic monochrome fallback, 80-column mindful layout.
+- **Performance-guarded** - Collectors run in parallel under a hard 250 ms
+  deadline; the startup benchmark (<50 ms median, <80 ms p95) runs in CI and
+  process RSS stays <15 MB.
+- **Professional aesthetics** - Unicode block fonts with gradient colors —
+  smooth 24-bit fades on truecolor terminals — plus automatic monochrome
+  fallback and full `NO_COLOR` support.
+- **Script-friendly** - `--json` emits the same data as structured JSON;
+  piped output is always plain text.
 
 ---
 
@@ -107,6 +116,19 @@ sysgreet --disable
 sysgreet --text "Production DB"
 sysgreet --text "Coffee Break"
 sysgreet --text "Deploy Day"
+
+# JSON mode - structured output for scripts (no art, no prompts)
+sysgreet --json | jq -r '.hostname'
+```
+
+**Useful flags:**
+
+```bash
+sysgreet --list-fonts          # Print the embedded fonts
+sysgreet --font "ANSI Shadow"  # One-off font override
+sysgreet --width 60            # Preview how a 60-column session renders
+sysgreet --no-color            # Plain output (NO_COLOR works too)
+sysgreet --config ~/alt.yaml   # Point at a specific config file
 ```
 
 > **Tip:** Use `--text` to create custom banners for different environments, reminders, or just for fun. Great for distinguishing production boxes, marking maintenance windows, or adding personality to your terminals.
@@ -147,6 +169,7 @@ display:
 
 layout:
   compact: false
+  max_width: 0 # cap banner width in columns; 0 = detected terminal width
   sections: ["header", "network", "system", "resources"]
 
 network:
@@ -182,12 +205,28 @@ Environment variables override everything (e.g.
   yellow, ≥90% in red). Windows surfaces realtime CPU usage; Unix hosts show load
   averages.
 
+### Terminal width handling
+
+The hostname art is only printed when it actually fits. On narrow terminals
+sysgreet steps down automatically:
+
+1. Full hostname in your configured font
+2. Hostname without the domain (`pve1.home.lan` → `PVE1`, with the full name
+   kept on an info line)
+3. Progressively narrower fonts (`standard`, then `Small`)
+4. A single ruled line — `═════ PVE1 ═════` — that fits any width
+
+Set `layout.max_width` to cap the width below what the terminal reports, or
+pass `--width` to preview a specific size.
+
 ---
 
 ## Performance guarantees
 
 - **Startup** - `< 50 ms` median, `< 80 ms` p95 (validated by
   `go test -bench Startup ./test/benchmarks`)
+- **Never hangs a login** - Collectors run concurrently under a shared 250 ms
+  deadline; a stuck metric source just drops its section
 - **Binary footprint** - `< 10 MB` for all release targets (GoReleaser checks)
 - **Runtime memory** - `< 15 MB` RSS for default banner
 - **No network activity** - All data collected locally, offline-safe
@@ -237,7 +276,6 @@ platform-specific improvements before diving in.
 
 ## Roadmap
 
-- Optional JSON output for scripting in CI/CD pipelines
 - Extended GPU/storage telemetry for workstation profiles
 - Pluggable section framework (e.g., Kubernetes context, vault status)
 - Prebuilt Windows installer for enterprise onboarding
