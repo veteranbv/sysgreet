@@ -1,65 +1,25 @@
 package render
 
 import (
-	"os"
-	"strings"
+	"github.com/veteranbv/sysgreet/internal/terminal"
 )
 
-var ansiCodes = map[string]string{
-	"red":    "\033[31m",
-	"yellow": "\033[33m",
-	"green":  "\033[32m",
-	"cyan":   "\033[36m",
-	"reset":  "\033[0m",
-}
-
-// Colorizer wraps text in ANSI sequences when enabled.
+// Colorizer wraps text in ANSI sequences when the terminal profile allows.
 type Colorizer struct {
-	enabled bool
+	profile terminal.Profile
 }
 
-// NewColorizer creates a colorizer that may be disabled via NO_COLOR or explicit flag.
-func NewColorizer(disable bool) Colorizer {
-	if disable {
-		return Colorizer{enabled: false}
-	}
-	if _, ok := os.LookupEnv("NO_COLOR"); ok {
-		return Colorizer{enabled: false}
-	}
-	return Colorizer{enabled: true}
+// NewColorizer creates a colorizer for the given terminal profile.
+func NewColorizer(profile terminal.Profile) Colorizer {
+	return Colorizer{profile: profile}
 }
 
-// Wrap applies color when enabled.
+// Wrap applies color when the profile supports it.
 func (c Colorizer) Wrap(color, text string) string {
-	if !c.enabled {
-		return text
-	}
-	code, ok := ansiCodes[color]
-	if !ok || color == "reset" {
-		return text
-	}
-	return code + text + ansiCodes["reset"]
+	return terminal.Wrap(c.profile, color, text)
 }
 
 // Strip removes ANSI escape sequences from a string.
 func Strip(input string) string {
-	var b strings.Builder
-	i := 0
-	runes := []rune(input)
-	for i < len(runes) {
-		if runes[i] == '' {
-			// Skip until letter
-			i++
-			for i < len(runes) && ((runes[i] >= '0' && runes[i] <= '9') || runes[i] == '[' || runes[i] == ';') {
-				i++
-			}
-			if i < len(runes) {
-				i++
-			}
-			continue
-		}
-		b.WriteRune(runes[i])
-		i++
-	}
-	return b.String()
+	return terminal.Strip(input)
 }

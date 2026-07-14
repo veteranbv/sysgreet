@@ -126,3 +126,81 @@ func TestDefaultWritePathFallsBackToHome(t *testing.T) {
 		t.Fatalf("expected %s, got %s", expected, got)
 	}
 }
+
+func TestLoad_MaxWidthFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	cfgDir := dir + "/.config/sysgreet"
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	content := []byte(`layout:
+  max_width: 100
+`)
+	if err := os.WriteFile(cfgDir+"/config.yaml", content, 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Layout.MaxWidth != 100 {
+		t.Fatalf("expected max_width 100, got %d", cfg.Layout.MaxWidth)
+	}
+}
+
+func TestLoad_MaxWidthFromEnv(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("SYSGREET_LAYOUT_MAX_WIDTH", "90")
+
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Layout.MaxWidth != 90 {
+		t.Fatalf("expected max_width 90 from env, got %d", cfg.Layout.MaxWidth)
+	}
+}
+
+func TestLoad_MaxWidthRejectsNegative(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("SYSGREET_LAYOUT_MAX_WIDTH", "-5")
+
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Layout.MaxWidth != 0 {
+		t.Fatalf("negative max_width should be ignored, got %d", cfg.Layout.MaxWidth)
+	}
+}
+
+func TestLoad_ExplicitConfigPathIsExclusive(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	cfgDir := dir + "/.config/sysgreet"
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// A default-path config that must NOT be picked up when an explicit
+	// path is requested but missing.
+	decoy := []byte("ascii:\n  font: \"slant\"\n")
+	if err := os.WriteFile(cfgDir+"/config.yaml", decoy, 0o644); err != nil {
+		t.Fatalf("write decoy config: %v", err)
+	}
+	t.Setenv("SYSGREET_CONFIG", dir+"/does-not-exist.yaml")
+
+	cfg, used, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if used != "" {
+		t.Fatalf("no config should have been loaded, got %q", used)
+	}
+	if cfg.ASCII.Font != Default().ASCII.Font {
+		t.Fatalf("expected built-in defaults, got font %q from decoy config", cfg.ASCII.Font)
+	}
+}

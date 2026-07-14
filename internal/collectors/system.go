@@ -5,6 +5,10 @@ import (
 	"time"
 )
 
+// gatherTimeout bounds total collection time. A login banner that is a few
+// metrics short beats one that hangs the shell.
+const gatherTimeout = 250 * time.Millisecond
+
 // SystemInfo captures host identity and session metadata.
 type SystemInfo struct {
 	Hostname    string
@@ -112,49 +116,92 @@ type Providers struct {
 	LastLogin LastLoginCollector
 }
 
-// Gather builds a Snapshot using the configured providers. Missing collectors are tolerated to allow graceful degradation.
+// Gather builds a Snapshot using the configured providers. Collectors run
+// concurrently and share a single deadline; whatever has finished by then is
+// used and the rest is abandoned, so a stuck collector can never delay a
+// login even if it ignores context cancellation. Missing collectors and
+// failures are tolerated to allow graceful degradation.
 func (p Providers) Gather(ctx context.Context) Snapshot {
-	var snap Snapshot
+	ctx, cancel := context.WithTimeout(ctx, gatherTimeout)
+	defer cancel()
+
+	// Each collector sends an apply function; the snapshot is only ever
+	// touched from this goroutine, so an abandoned straggler cannot race
+	// the caller. The channel is buffered so stragglers finish into it
+	// instead of leaking blocked forever.
+	results := make(chan func(*Snapshot), 5)
+	launched := 0
+	launch := func(fn func() func(*Snapshot)) {
+		launched++
+		go func() {
+			results <- fn()
+		}()
+	}
+
 	if p.System != nil {
-		if sys, err := p.System.CollectSystem(ctx); err == nil {
-			fmtSystem(&snap.System, sys)
-		} else {
-			recordError("system", err)
-		}
+		launch(func() func(*Snapshot) {
+			sys, err := p.System.CollectSystem(ctx)
+			if err != nil {
+				recordError("system", err)
+				return nil
+			}
+			return func(s *Snapshot) { s.System = sys }
+		})
 	}
 	if p.Network != nil {
-		if netInfo, err := p.Network.CollectNetwork(ctx); err == nil {
-			snap.Network = netInfo
-		} else {
-			recordError("network", err)
-		}
+		launch(func() func(*Snapshot) {
+			netInfo, err := p.Network.CollectNetwork(ctx)
+			if err != nil {
+				recordError("network", err)
+				return nil
+			}
+			return func(s *Snapshot) { s.Network = netInfo }
+		})
 	}
 	if p.Resources != nil {
-		if res, err := p.Resources.CollectResources(ctx); err == nil {
-			snap.Resources = res
-		} else {
-			recordError("resources", err)
-		}
+		launch(func() func(*Snapshot) {
+			res, err := p.Resources.CollectResources(ctx)
+			if err != nil {
+				recordError("resources", err)
+				return nil
+			}
+			return func(s *Snapshot) { s.Resources = res }
+		})
 	}
 	if p.Session != nil {
-		if session, err := p.Session.CollectSession(ctx); err == nil {
-			snap.Session = session
-		} else {
-			recordError("session", err)
-		}
+		launch(func() func(*Snapshot) {
+			session, err := p.Session.CollectSession(ctx)
+			if err != nil {
+				recordError("session", err)
+				return nil
+			}
+			return func(s *Snapshot) { s.Session = session }
+		})
 	}
 	if p.LastLogin != nil {
-		if last, err := p.LastLogin.CollectLastLogin(ctx); err == nil {
-			snap.LastLogin = last
-		} else {
-			recordError("last_login", err)
+		launch(func() func(*Snapshot) {
+			last, err := p.LastLogin.CollectLastLogin(ctx)
+			if err != nil {
+				recordError("last_login", err)
+				return nil
+			}
+			return func(s *Snapshot) { s.LastLogin = last }
+		})
+	}
+
+	var snap Snapshot
+	for i := 0; i < launched; i++ {
+		select {
+		case apply := <-results:
+			if apply != nil {
+				apply(&snap)
+			}
+		case <-ctx.Done():
+			recordError("gather", ctx.Err())
+			return snap
 		}
 	}
 	return snap
-}
-
-func fmtSystem(dst *SystemInfo, src SystemInfo) {
-	*dst = src
 }
 
 // DemoSnapshot returns a realistic demo snapshot for screenshots and testing.

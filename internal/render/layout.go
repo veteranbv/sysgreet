@@ -6,16 +6,35 @@ import (
 
 	"github.com/veteranbv/sysgreet/internal/banner"
 	"github.com/veteranbv/sysgreet/internal/config"
+	"github.com/veteranbv/sysgreet/internal/terminal"
 )
+
+// bodyIndent prefixes every section line in the full layout.
+const bodyIndent = "  "
 
 // Renderer formats banner output into terminal-friendly text.
 type Renderer struct {
 	colorizer Colorizer
+	width     int
 }
 
-// NewRenderer instantiates a renderer with optional color suppression.
-func NewRenderer(disableColor bool) Renderer {
-	return Renderer{colorizer: NewColorizer(disableColor)}
+// NewRenderer instantiates a renderer for the given terminal environment.
+// A zero env.Width leaves lines unclipped.
+func NewRenderer(env terminal.Env) Renderer {
+	return Renderer{colorizer: NewColorizer(env.Profile), width: env.Width}
+}
+
+// ApplyConfig folds config-driven constraints into the detected terminal
+// environment: layout.max_width caps the width and ascii.monochrome forces
+// plain output everywhere, including resource threshold highlights.
+func ApplyConfig(env terminal.Env, cfg config.Config) terminal.Env {
+	if max := cfg.Layout.MaxWidth; max > 0 && (env.Width == 0 || max < env.Width) {
+		env.Width = max
+	}
+	if cfg.ASCII.Monochrome {
+		env.Profile = terminal.ProfileNoColor
+	}
+	return env
 }
 
 // Render produces the final banner string.
@@ -30,9 +49,16 @@ func (r Renderer) Render(out banner.Output, cfg config.Config) string {
 	if len(out.Header.Lines) > 0 {
 		builder.WriteString("\n")
 		for _, line := range out.Header.Lines {
-			builder.WriteString(line)
+			builder.WriteString(r.clip(line, 0))
 			builder.WriteString("\n")
 		}
+	}
+
+	// The indent has to fit inside the width cap too; drop it on absurdly
+	// narrow terminals rather than overflow.
+	indent := bodyIndent
+	if r.width > 0 && r.width <= len(bodyIndent) {
+		indent = ""
 	}
 
 	sections := orderSections(out.Sections, cfg.Layout.Sections)
@@ -41,14 +67,14 @@ func (r Renderer) Render(out banner.Output, cfg config.Config) string {
 			continue
 		}
 		builder.WriteString("\n")
-		builder.WriteString(section.Title)
+		builder.WriteString(r.clip(section.Title, 0))
 		builder.WriteString("\n")
 		for _, line := range section.Lines {
-			formatted := line
+			formatted := r.clip(line, len(indent))
 			if section.Key == "resources" {
-				formatted = r.highlightResource(section, line)
+				formatted = r.highlightResource(section, formatted)
 			}
-			builder.WriteString("  ")
+			builder.WriteString(indent)
 			builder.WriteString(formatted)
 			builder.WriteString("\n")
 		}
@@ -56,9 +82,18 @@ func (r Renderer) Render(out banner.Output, cfg config.Config) string {
 	return strings.TrimRight(builder.String(), "\n")
 }
 
+// renderCompact emits a single pipe-separated line using the plain hostname
+// rather than the multi-line art.
 func (r Renderer) renderCompact(out banner.Output, cfg config.Config) string {
-	parts := []string{Strip(out.Header.Art)}
-	parts = append(parts, out.Header.Lines...)
+	parts := []string{strings.ToUpper(out.Header.Hostname)}
+	for _, line := range out.Header.Lines {
+		// The full-hostname fallback line exists to supplement shortened
+		// art; compact output already leads with the full name.
+		if line == out.Header.Hostname {
+			continue
+		}
+		parts = append(parts, line)
+	}
 	sections := orderSections(out.Sections, cfg.Layout.Sections)
 	for _, section := range sections {
 		if len(section.Lines) == 0 {
@@ -67,7 +102,21 @@ func (r Renderer) renderCompact(out banner.Output, cfg config.Config) string {
 		parts = append(parts, section.Title)
 		parts = append(parts, section.Lines...)
 	}
-	return strings.Join(parts, " | ")
+	return r.clip(strings.Join(parts, " | "), 0)
+}
+
+// clip truncates a line to the terminal width in display columns,
+// accounting for indent and marking the cut with an ellipsis. Zero width
+// leaves the line untouched.
+func (r Renderer) clip(line string, indent int) string {
+	if r.width <= 0 {
+		return line
+	}
+	limit := r.width - indent
+	if limit < 1 {
+		limit = 1
+	}
+	return terminal.Clip(line, limit)
 }
 
 func orderSections(sections []banner.Section, desired []string) []banner.Section {

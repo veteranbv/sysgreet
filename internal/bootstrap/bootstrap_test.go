@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/veteranbv/sysgreet/internal/config"
 )
 
 type configYAML struct {
@@ -78,5 +80,27 @@ func TestBootstrapCreatesDefaultConfig(t *testing.T) {
 	}
 	if _, err := time.Parse(time.RFC3339, cfg.CreatedAt); err != nil {
 		t.Fatalf("created_at not RFC3339: %v", err)
+	}
+}
+
+func TestBootstrapWritesTOMLForTOMLPath(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+
+	_, err := Bootstrap(context.Background(), cfgPath, IO{}, Options{FlagPolicy: "overwrite", Interactive: false})
+	if err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+
+	t.Setenv("SYSGREET_CONFIG", cfgPath)
+	cfg, used, err := config.Load()
+	if err != nil {
+		t.Fatalf("bootstrapped .toml config does not parse: %v", err)
+	}
+	if used != cfgPath {
+		t.Fatalf("expected %s to be loaded, got %q", cfgPath, used)
+	}
+	if cfg.ASCII.Font != config.Default().ASCII.Font {
+		t.Fatalf("bootstrapped config lost defaults: %+v", cfg.ASCII)
 	}
 }

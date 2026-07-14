@@ -154,7 +154,8 @@ sysgreet/
 │   ├── collectors/        # System data collectors
 │   ├── config/            # Configuration loading
 │   ├── network/           # Network utilities
-│   └── render/            # Layout and color rendering
+│   ├── render/            # Layout, clipping, and JSON rendering
+│   └── terminal/          # Terminal width/color detection, ANSI palette
 ├── test/
 │   ├── benchmarks/        # Performance benchmarks
 │   └── integration/       # Platform-specific integration tests
@@ -198,6 +199,18 @@ Sysgreet has strict performance requirements:
 - **No network activity**: All data must be collected locally
 
 When adding new collectors or features, ensure they don't violate these constraints.
+
+Collectors run concurrently inside `Providers.Gather` under a shared 250 ms
+deadline, so honor the `context.Context` you receive — a collector that
+ignores cancellation can still delay a login.
+
+## Output Rules
+
+- Never print wider than the terminal. The ascii renderer receives a
+  `MaxWidth` and walks a fallback ladder; anything you add to the banner body
+  is clipped by the render layer. Don't bypass either.
+- All color must flow through `internal/terminal` so `NO_COLOR`, `TERM=dumb`,
+  piped output, and Windows console quirks stay handled in one place.
 
 ## Documentation
 

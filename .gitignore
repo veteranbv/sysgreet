@@ -11,7 +11,7 @@ RELEASE.md
 
 # Go build artifacts
 bin/
-sysgreet
+/sysgreet
 *.test
 *.exe
 *.exe~

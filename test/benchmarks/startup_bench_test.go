@@ -8,6 +8,7 @@ import (
 	"github.com/veteranbv/sysgreet/internal/banner"
 	"github.com/veteranbv/sysgreet/internal/collectors"
 	"github.com/veteranbv/sysgreet/internal/config"
+	"github.com/veteranbv/sysgreet/internal/terminal"
 )
 
 // BenchmarkStartup is a high-level benchmark that builds a banner using stub collectors.
@@ -26,7 +27,7 @@ func BenchmarkStartup(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, _, err := nBanner.Build(ctx, cfg); err != nil {
+		if _, _, err := nBanner.Build(ctx, cfg, terminal.Env{}); err != nil {
 			b.Fatalf("banner build failed: %v", err)
 		}
 	}

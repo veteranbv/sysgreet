@@ -27,7 +27,10 @@ type ASCIIConfig struct {
 
 // LayoutConfig controls banner layout options.
 type LayoutConfig struct {
-	Compact  bool     `yaml:"compact" toml:"compact"`
+	Compact bool `yaml:"compact" toml:"compact"`
+	// MaxWidth caps the banner width in columns. Zero means use the
+	// detected terminal width.
+	MaxWidth int      `yaml:"max_width" toml:"max_width"`
 	Sections []string `yaml:"sections" toml:"sections"`
 }
 

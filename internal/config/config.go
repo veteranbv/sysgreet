@@ -21,8 +21,11 @@ func Load() (Config, string, error) {
 	cfg := Default()
 	candidatePaths := defaultConfigPaths()
 
+	// An explicit config path (--config or SYSGREET_CONFIG) is exclusive:
+	// if that file is absent we fall back to built-in defaults, never to a
+	// different config file the user didn't ask for.
 	if custom := os.Getenv("SYSGREET_CONFIG"); custom != "" {
-		candidatePaths = append([]string{custom}, candidatePaths...)
+		candidatePaths = []string{custom}
 	}
 
 	var usedPath string
@@ -177,6 +180,9 @@ func mergeLayout(base *Config, layout *rawLayout) {
 	if layout.Compact != nil {
 		base.Layout.Compact = *layout.Compact
 	}
+	if layout.MaxWidth != nil && *layout.MaxWidth >= 0 {
+		base.Layout.MaxWidth = *layout.MaxWidth
+	}
 }
 
 func mergeNetwork(base *Config, network *rawNetwork) {
@@ -243,6 +249,11 @@ func applyASCIIOverrides(ascii *ASCIIConfig) {
 func applyLayoutOverrides(layout *LayoutConfig) {
 	if v, ok := lookupBool("SYSGREET_LAYOUT_COMPACT"); ok {
 		layout.Compact = v
+	}
+	if max := os.Getenv("SYSGREET_LAYOUT_MAX_WIDTH"); max != "" {
+		if parsed, err := parseInt(max); err == nil && parsed >= 0 {
+			layout.MaxWidth = parsed
+		}
 	}
 	if sections := os.Getenv("SYSGREET_LAYOUT_SECTIONS"); sections != "" {
 		parts := strings.Split(sections, ",")
@@ -323,6 +334,7 @@ type rawASCII struct {
 
 type rawLayout struct {
 	Compact  *bool     `yaml:"compact" toml:"compact"`
+	MaxWidth *int      `yaml:"max_width" toml:"max_width"`
 	Sections *[]string `yaml:"sections" toml:"sections"`
 }
 

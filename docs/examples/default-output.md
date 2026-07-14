@@ -42,4 +42,27 @@ Resources
 
 Note: The banner uses ANSI Regular font with a blue-to-white gradient (brightblue → blue → cyan → brightcyan → white).
 
+## Narrow Terminal Degradation
+
+The same banner adapts to the available width instead of wrapping. At 50
+columns the default font no longer fits, so sysgreet steps down to the
+`Small` font:
+
+```text
+                                            _
+  ___  _  _   ___  __ _   _ _   ___   ___  | |_
+ (_-< | || | (_-< / _` | | '_| / -_) / -_) |  _|
+ /__/  \_, | /__/ \__, | |_|   \___| \___|  \__|
+       |__/       |___/
+```
+
+And when even that is too wide (long hostnames, very tight panes), the header
+collapses to a single ruled line:
+
+```text
+═════════════ SYSGREET ═════════════
+```
+
+Preview any width with `sysgreet --width <n>`.
+
 Use this snapshot for QA validation and regression testing until golden files are finalized.
