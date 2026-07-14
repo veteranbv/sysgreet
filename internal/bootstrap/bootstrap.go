@@ -122,7 +122,7 @@ func overwriteConfig(ctx context.Context, cfgPath string, stderr io.Writer, resu
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}
-	data, err := renderDefaultConfig(now)
+	data, err := renderDefaultConfig(now, cfgPath)
 	if err != nil {
 		return result, fmt.Errorf("bootstrap: render default config: %w", err)
 	}
@@ -174,7 +174,7 @@ func createNewConfig(ctx context.Context, cfgPath string, stderr io.Writer, resu
 		return result, nil
 	}
 
-	data, err := renderDefaultConfig(now)
+	data, err := renderDefaultConfig(now, cfgPath)
 	if err != nil {
 		return result, fmt.Errorf("bootstrap: render default config: %w", err)
 	}

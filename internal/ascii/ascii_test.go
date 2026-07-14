@@ -309,3 +309,25 @@ func TestRendererNonASCIITextUsesPlainHeader(t *testing.T) {
 		}
 	}
 }
+
+func TestPlainHeaderUsesAvailableWidth(t *testing.T) {
+	r := mustRenderer(t)
+	// 70 columns of hostname in a 100-column terminal: the ruled header
+	// must widen to fit the name rather than clip it at the preferred
+	// 60-column rule length.
+	name := strings.Repeat("a", 70)
+	art, err := r.Render(name+".home.lan", RenderOptions{
+		Font:     "ANSI Regular",
+		MaxWidth: 100,
+		Profile:  terminal.ProfileNoColor,
+	})
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	if !strings.Contains(art.Text, name) {
+		t.Fatalf("plain header clipped a name that fits the terminal: %q", art.Text)
+	}
+	if art.Width > 100 {
+		t.Fatalf("plain header overflows: %d columns", art.Width)
+	}
+}

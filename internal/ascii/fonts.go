@@ -209,18 +209,27 @@ func shortName(text string) string {
 // plainHeader is the bottom of the ladder: a one-line ruled header that fits
 // any terminal. Something like ═════ PVE1 ═════.
 func (r *Renderer) plainHeader(name, fullText string, opts RenderOptions) Art {
+	// Preferred rule length; long names widen it rather than get clipped,
+	// as long as the terminal allows.
 	const maxRule = 60
-	width := opts.MaxWidth
-	if width <= 0 || width > maxRule {
-		width = maxRule
-	}
+	avail := opts.MaxWidth
 
 	label := name
-	if terminal.DisplayWidth(label)+4 > width {
-		label = terminal.Clip(label, width)
+	if avail > 0 {
+		label = terminal.Clip(label, avail)
 	}
+	labelWidth := terminal.DisplayWidth(label)
+
+	target := maxRule
+	if labelWidth+4 > target {
+		target = labelWidth + 4
+	}
+	if avail > 0 && target > avail {
+		target = avail
+	}
+
 	line := label
-	if fill := width - terminal.DisplayWidth(label) - 2; fill >= 2 {
+	if fill := target - labelWidth - 2; fill >= 2 {
 		left := fill / 2
 		right := fill - left
 		line = strings.Repeat("═", left) + " " + label + " " + strings.Repeat("═", right)
