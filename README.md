@@ -270,6 +270,9 @@ platform-specific improvements before diving in.
 
 - CI (`.github/workflows/ci.yml`) runs `golangci-lint`, unit tests with race
   detection, integration tests, and validates startup performance (<80ms p95).
+- To cut a release, run the **Tag Release** workflow from the Actions tab
+  with a `vX.Y.Z` version (or push a `v*` tag manually). It tags `main` and
+  hands off to the Release workflow.
 - Releases use GoReleaser (`.goreleaser.yml`) to ship signed binaries for
   Linux/macOS (amd64/arm64) and Windows (amd64), plus checksums.
 - `go install github.com/veteranbv/sysgreet@VERSION` is validated during the
