@@ -38,7 +38,8 @@ func run() error {
 	settings := parseFlags()
 
 	if settings.Version {
-		fmt.Printf("sysgreet %s (commit: %s, built: %s)\n", version, commit, date)
+		v, c, d := buildInfo()
+		fmt.Printf("sysgreet %s (commit: %s, built: %s)\n", v, c, d)
 		return nil
 	}
 	if settings.Disable {
