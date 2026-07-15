@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **`--version` tells the truth for `go install` builds** - Binaries built outside GoReleaser reported `dev (commit: none, built: unknown)`; they now resolve the module version and VCS metadata from Go's embedded build info. GoReleaser-injected values still take precedence.
+
 ## v1.1.0
 
 ### Added
