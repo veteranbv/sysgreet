@@ -15,9 +15,15 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - name: Ensure release commit is tagged
+        run: |
+          if ! git describe --exact-match --tags HEAD >/dev/null 2>&1; then
+            echo "::error::No tag at HEAD. Cut releases with the 'Tag Release' workflow; running 'Release' directly only works at a tag ref."
+            exit 1
+          fi
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: '1.22'
       - name: Run Tests
@@ -31,7 +37,7 @@ jobs:
           go install ./cmd/sysgreet
           sysgreet --disable
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v5
+        uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
           args: release --clean
