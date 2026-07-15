@@ -18,17 +18,27 @@ func resolveBuildInfo(info *debug.BuildInfo, v, c, d string) (string, string, st
 	if v == "dev" && info.Main.Version != "" && info.Main.Version != "(devel)" {
 		v = info.Main.Version
 	}
+	fromVCS := false
+	dirty := false
 	for _, s := range info.Settings {
 		switch s.Key {
 		case "vcs.revision":
 			if c == "none" {
 				c = s.Value
+				fromVCS = true
 			}
 		case "vcs.time":
 			if d == "unknown" {
 				d = s.Value
 			}
+		case "vcs.modified":
+			dirty = s.Value == "true"
 		}
+	}
+	// A build from a tree with uncommitted changes must not claim to
+	// exactly match the reported commit.
+	if fromVCS && dirty {
+		c += "-dirty"
 	}
 	return v, c, d
 }

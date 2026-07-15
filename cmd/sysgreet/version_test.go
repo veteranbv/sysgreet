@@ -46,6 +46,29 @@ func TestResolveBuildInfo(t *testing.T) {
 			wantV: "v1.2.0", wantC: "deadbeef", wantD: "2026-07-15",
 		},
 		{
+			name: "dirty checkout marks the commit",
+			info: &debug.BuildInfo{
+				Main: debug.Module{Version: "(devel)"},
+				Settings: []debug.BuildSetting{
+					{Key: "vcs.revision", Value: "abc1234"},
+					{Key: "vcs.modified", Value: "true"},
+				},
+			},
+			v: "dev", c: "none", d: "unknown",
+			wantV: "dev", wantC: "abc1234-dirty", wantD: "unknown",
+		},
+		{
+			name: "ldflags commit is never marked dirty",
+			info: &debug.BuildInfo{
+				Settings: []debug.BuildSetting{
+					{Key: "vcs.revision", Value: "abc1234"},
+					{Key: "vcs.modified", Value: "true"},
+				},
+			},
+			v: "v1.2.0", c: "deadbeef", d: "2026-07-15",
+			wantV: "v1.2.0", wantC: "deadbeef", wantD: "2026-07-15",
+		},
+		{
 			name: "empty build info keeps defaults",
 			info: &debug.BuildInfo{},
 			v:    "dev", c: "none", d: "unknown",
