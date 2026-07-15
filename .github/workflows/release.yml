@@ -4,6 +4,9 @@ on:
   push:
     tags:
       - 'v*'
+  # Invoked by the Tag Release workflow at the freshly pushed tag; tags
+  # created with the default GITHUB_TOKEN do not fire the push trigger.
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -30,7 +33,7 @@ jobs:
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v5
         with:
-          version: latest
+          version: "~> v2"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
