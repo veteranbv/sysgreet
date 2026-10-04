@@ -8,8 +8,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/shirou/gopsutil/v3/disk"
-	"github.com/shirou/gopsutil/v3/mem"
+	"github.com/shirou/gopsutil/v4/disk"
+	"github.com/shirou/gopsutil/v4/mem"
 
 	"github.com/veteranbv/sysgreet/internal/collectors"
 )

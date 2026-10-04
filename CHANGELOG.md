@@ -33,6 +33,15 @@
 - `--force` prints the banner even in a non-interactive SSH session.
 - `--help` now describes the tool and lists the environment overrides.
 
+### Build and release
+
+- **Go 1.26 or later is required to build from source.** Release binaries are built with the latest Go release, so they ship with current standard-library security fixes; v1.2.1 was built with Go 1.22, which has known vulnerabilities reachable from sysgreet.
+- **No more cgo warning on `go install` for macOS** - gopsutil v4 dropped the `go-m1cpu` dependency that printed a C compiler warning during install.
+- **Reproducible release builds** - The same tag now produces byte-identical binaries (`-trimpath`, commit-based timestamps).
+- **Build provenance** - Each release is attested with GitHub's build provenance; verify a download with `gh attestation verify <file> --repo veteranbv/sysgreet`.
+- Windows release archives are `.zip`.
+- CI runs on Linux, macOS and Windows, adds the race detector and `govulncheck`, pins actions to commit SHAs, and fails if a full banner takes longer than 250ms. Dependabot keeps actions and modules current.
+
 ## v1.2.1
 
 ### Fixed

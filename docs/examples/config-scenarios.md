@@ -43,7 +43,7 @@ display:
 
 network:
   show_interface_names: true
-  max_interfaces: 5
+  max_interfaces: 3
 ```
 
 ## Narrow Terminals and tmux Panes

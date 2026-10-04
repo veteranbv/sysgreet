@@ -3,6 +3,7 @@ package collectors
 import (
 	"context"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -29,51 +30,66 @@ func TestResourceCollectorReturnsMetrics(t *testing.T) {
 	}
 }
 
-func TestGatherRunsCollectorsConcurrently(t *testing.T) {
-	// Each stub sleeps 30ms; serial execution would take 150ms.
-	start := time.Now()
-	providers := Providers{
-		System:    slowSystemCollector{},
-		Network:   slowNetworkCollector{},
-		Resources: slowResourceCollector{},
-		Session:   slowSessionCollector{},
-		LastLogin: slowLastLoginCollector{},
-	}
-	snap := providers.Gather(context.Background())
-	elapsed := time.Since(start)
+// The gather tests run on synctest's virtual clock: the stubs' sleeps and
+// Gather's deadline are exact, so the bounds below cannot flake on a slow
+// runner.
 
-	if elapsed > 120*time.Millisecond {
-		t.Errorf("Gather took %v; collectors do not appear to run concurrently", elapsed)
-	}
-	if snap.System.Hostname != "slow" {
-		t.Errorf("system snapshot missing, got %+v", snap.System)
-	}
-	if snap.Network.Primary == nil {
-		t.Error("network snapshot missing")
-	}
-	if snap.Session.RemoteAddr != "203.0.113.7" {
-		t.Errorf("session snapshot missing, got %+v", snap.Session)
-	}
-	if snap.LastLogin == nil {
-		t.Error("last login snapshot missing")
-	}
+func TestGatherRunsCollectorsConcurrently(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		// Each stub sleeps 30ms; serial execution would take 150ms.
+		start := time.Now()
+		providers := Providers{
+			System:    slowSystemCollector{},
+			Network:   slowNetworkCollector{},
+			Resources: slowResourceCollector{},
+			Session:   slowSessionCollector{},
+			LastLogin: slowLastLoginCollector{},
+		}
+		snap := providers.Gather(context.Background())
+
+		if elapsed := time.Since(start); elapsed != 30*time.Millisecond {
+			t.Errorf("Gather took %v; concurrent collectors should finish together at 30ms", elapsed)
+		}
+		if snap.System.Hostname != "slow" {
+			t.Errorf("system snapshot missing, got %+v", snap.System)
+		}
+		if snap.Network.Primary == nil {
+			t.Error("network snapshot missing")
+		}
+		if snap.Session.RemoteAddr != "203.0.113.7" {
+			t.Errorf("session snapshot missing, got %+v", snap.Session)
+		}
+		if snap.LastLogin == nil {
+			t.Error("last login snapshot missing")
+		}
+	})
 }
 
 func TestGatherToleratesHangingCollector(t *testing.T) {
-	// One collector blocks without honoring ctx; the others finish. Gather
-	// must return at the deadline with the finished results applied.
-	providers := Providers{
-		System:  hangingSystemCollector{},
-		Session: slowSessionCollector{},
-	}
-	start := time.Now()
-	snap := providers.Gather(context.Background())
-	if elapsed := time.Since(start); elapsed > gatherTimeout+150*time.Millisecond {
-		t.Errorf("Gather took %v; timeout did not bound a hanging collector", elapsed)
-	}
-	if snap.Session.RemoteAddr != "203.0.113.7" {
-		t.Errorf("results from finished collectors should survive a timeout, got %+v", snap.Session)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		// One collector blocks without honoring ctx; the others finish.
+		// Gather must return exactly at the deadline with the finished
+		// results applied.
+		providers := Providers{
+			System:  hangingSystemCollector{},
+			Session: slowSessionCollector{},
+		}
+		start := time.Now()
+		snap := providers.Gather(context.Background())
+		if elapsed := time.Since(start); elapsed != gatherTimeout {
+			t.Errorf("Gather took %v; want exactly the %v deadline", elapsed, gatherTimeout)
+		}
+		if snap.Session.RemoteAddr != "203.0.113.7" {
+			t.Errorf("results from finished collectors should survive a timeout, got %+v", snap.Session)
+		}
+
+		// Let the abandoned collector finish. synctest fails the test if
+		// its goroutine is still blocked when the bubble ends, so this
+		// proves a straggler drains into Gather's buffered channel instead
+		// of leaking.
+		time.Sleep(time.Minute)
+		synctest.Wait()
+	})
 }
 
 type slowSystemCollector struct{}

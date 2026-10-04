@@ -4,7 +4,9 @@ project_name: sysgreet
 
 before:
   hooks:
-    - go mod tidy
+    # Fail rather than silently rewrite go.mod at release time.
+    - go mod tidy -diff
+    - go mod verify
 
 builds:
   - id: sysgreet
@@ -13,16 +15,23 @@ builds:
     goarch: [amd64, arm64]
     env:
       - CGO_ENABLED=0
+    # Reproducible: the same tag builds byte-identical binaries.
+    flags:
+      - -trimpath
+    mod_timestamp: "{{ .CommitTimestamp }}"
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
       - -X main.commit={{.Commit}}
-      - -X main.date={{.Date}}
+      - -X main.date={{.CommitDate}}
 
 archives:
   - id: binary
     ids: [sysgreet]
     formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
     files:
       - LICENSE
       - README.md
