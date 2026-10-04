@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -29,7 +30,9 @@ func TestAtomicWriteFileCreatesFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stat: %v", err)
 	}
-	if mode := info.Mode().Perm(); mode != 0o600 {
+	// Windows has no Unix permission bits; Go reports any writable file
+	// as 0666 there.
+	if mode := info.Mode().Perm(); runtime.GOOS != "windows" && mode != 0o600 {
 		t.Fatalf("expected mode 0600, got %v", mode)
 	}
 }
