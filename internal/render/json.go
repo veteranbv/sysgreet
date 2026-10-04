@@ -7,9 +7,18 @@ import (
 	"github.com/veteranbv/sysgreet/internal/config"
 )
 
+type jsonItem struct {
+	Label  string   `json:"label"`
+	Value  string   `json:"value"`
+	Detail string   `json:"detail,omitempty"`
+	Meter  *float64 `json:"meter,omitempty"`
+	Level  string   `json:"level,omitempty"`
+}
+
 type jsonSection struct {
 	Key   string         `json:"key"`
 	Title string         `json:"title"`
+	Items []jsonItem     `json:"items,omitempty"`
 	Lines []string       `json:"lines"`
 	Data  map[string]any `json:"data,omitempty"`
 }
@@ -35,12 +44,20 @@ func RenderJSON(out banner.Output, cfg config.Config) (string, error) {
 		if len(section.Lines) == 0 {
 			continue
 		}
-		doc.Sections = append(doc.Sections, jsonSection{
+		js := jsonSection{
 			Key:   section.Key,
 			Title: section.Title,
 			Lines: section.Lines,
 			Data:  section.Data,
-		})
+		}
+		for _, it := range section.Items {
+			ji := jsonItem{Label: it.Label, Value: it.Value, Detail: it.Detail, Meter: it.Meter}
+			if it.Level != banner.LevelNormal {
+				ji.Level = it.Level.String()
+			}
+			js.Items = append(js.Items, ji)
+		}
+		doc.Sections = append(doc.Sections, js)
 	}
 	data, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {

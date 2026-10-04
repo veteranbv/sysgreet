@@ -1,6 +1,7 @@
 package render
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -9,543 +10,312 @@ import (
 	"github.com/veteranbv/sysgreet/internal/terminal"
 )
 
-func TestRenderer_Render(t *testing.T) {
-	tests := []struct {
-		name         string
-		output       banner.Output
-		cfg          config.Config
-		wantContains []string
-	}{
-		{
-			name: "basic header and sections",
-			output: banner.Output{
-				Header: banner.Header{
-					Art:   "ASCII ART",
-					Lines: []string{"Linux 6.0 (x86_64)"},
-				},
-				Sections: []banner.Section{
-					{
-						Key:   "system",
-						Title: "System",
-						Lines: []string{"Uptime: 1d 2h 30m"},
-					},
-				},
-			},
-			cfg:          config.Default(),
-			wantContains: []string{"ASCII ART", "Linux 6.0 (x86_64)", "System", "Uptime: 1d 2h 30m"},
-		},
-		{
-			name: "multiple sections with ordering",
-			output: banner.Output{
-				Header: banner.Header{
-					Art: "HOST",
-				},
-				Sections: []banner.Section{
-					{
-						Key:   "resources",
-						Title: "Resources",
-						Lines: []string{"Mem: 8GB"},
-					},
-					{
-						Key:   "system",
-						Title: "System",
-						Lines: []string{"Uptime: 1d"},
-					},
-				},
-			},
-			cfg: config.Config{
-				Layout: config.LayoutConfig{
-					Sections: []string{"system", "resources"},
-				},
-			},
-			wantContains: []string{"System", "Resources"},
-		},
-		{
-			name: "empty sections are skipped",
-			output: banner.Output{
-				Header: banner.Header{
-					Art: "HOST",
-				},
-				Sections: []banner.Section{
-					{
-						Key:   "system",
-						Title: "System",
-						Lines: []string{},
-					},
-					{
-						Key:   "network",
-						Title: "Network",
-						Lines: []string{"Primary: 192.168.1.1"},
-					},
-				},
-			},
-			cfg:          config.Default(),
-			wantContains: []string{"Network", "Primary: 192.168.1.1"},
-		},
+func frac(f float64) *float64 { return &f }
+
+// section builds a section the way the builders do, with Lines derived
+// from the items.
+func section(key, title string, items ...banner.Item) banner.Section {
+	s := banner.Section{Key: key, Title: title, Items: items}
+	for _, it := range items {
+		s.Lines = append(s.Lines, it.Text())
 	}
+	return s
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := NewRenderer(terminal.Env{}) // No color for deterministic output
-			result := r.Render(tt.output, tt.cfg)
-
-			for _, want := range tt.wantContains {
-				if !strings.Contains(result, want) {
-					t.Errorf("Render() result missing %q\nGot:\n%s", want, result)
-				}
-			}
-		})
+func demoOutput() banner.Output {
+	return banner.Output{
+		Header: banner.Header{Hostname: "pve1", Art: "PVE1", Lines: []string{"Ubuntu 24.04.4 LTS (amd64)"}},
+		Sections: []banner.Section{
+			section("system", "System",
+				banner.Item{Label: "Uptime", Value: "4d 12h"},
+				banner.Item{Label: "User", Value: "root", Level: banner.LevelCrit},
+				banner.Item{Label: "Last login", Value: "26h ago from 192.168.1.20"},
+			),
+			section("network", "Network",
+				banner.Item{Label: "eth0", Value: "192.168.1.42"},
+				banner.Item{Label: "From", Value: "192.168.1.20"},
+			),
+			section("resources", "Resources",
+				banner.Item{Label: "Mem", Value: "23%", Detail: "3.7/16.0 GiB", Meter: frac(0.23)},
+				banner.Item{Label: "Disk", Value: "87%", Detail: "412.0/476.0 GiB", Meter: frac(0.87), Level: banner.LevelWarn},
+				banner.Item{Label: "Load", Value: "0.45", Detail: "8 cores", Meter: frac(0.06)},
+			),
+		},
 	}
 }
 
-func TestRenderer_RenderCompact(t *testing.T) {
-	tests := []struct {
-		name         string
-		output       banner.Output
-		cfg          config.Config
-		wantContains []string
-		separator    string
-	}{
-		{
-			name: "compact mode with separator",
-			output: banner.Output{
-				Header: banner.Header{
-					Hostname: "host",
-					Art:      "line1\nline2\nline3",
-					Lines:    []string{"Linux 6.0"},
-				},
-				Sections: []banner.Section{
-					{
-						Key:   "system",
-						Title: "System",
-						Lines: []string{"Uptime: 1d"},
-					},
-				},
-			},
-			cfg: config.Config{
-				Layout: config.LayoutConfig{
-					Compact: true,
-				},
-			},
-			wantContains: []string{"HOST", "Linux 6.0", "System", "Uptime: 1d"},
-			separator:    " | ",
+func plain(t *testing.T, width int) string {
+	t.Helper()
+	return NewRenderer(terminal.Env{Width: width}).Render(demoOutput(), config.Default())
+}
+
+func assertFits(t *testing.T, out string, width int) {
+	t.Helper()
+	for _, line := range strings.Split(out, "\n") {
+		if n := terminal.DisplayWidth(terminal.Strip(line)); width > 0 && n > width {
+			t.Errorf("line exceeds width %d (%d): %q", width, n, line)
+		}
+	}
+}
+
+func TestRender_AlignsLabelsWithinSection(t *testing.T) {
+	out := plain(t, 0)
+	for _, want := range []string{
+		"  Uptime      4d 12h",
+		"  User        root",
+		"  Last login  26h ago from 192.168.1.20",
+		"  eth0  192.168.1.42",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing aligned row %q in:\n%s", want, out)
+		}
+	}
+}
+
+func TestRender_MetersAndRightAlignedValues(t *testing.T) {
+	out := plain(t, 0)
+	for _, want := range []string{
+		"  Mem   ██░░░░░░░░  23%  3.7/16.0 GiB",
+		"  Disk  █████████░  87%  412.0/476.0 GiB",
+		"  Load  █░░░░░░░░░ 0.45  8 cores",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing meter row %q in:\n%s", want, out)
+		}
+	}
+}
+
+func TestRender_UnknownWidthStacksSections(t *testing.T) {
+	out := plain(t, 0)
+	sys := strings.Index(out, "System")
+	net := strings.Index(out, "Network")
+	res := strings.Index(out, "Resources")
+	if sys < 0 || net < 0 || res < 0 || sys >= net || net >= res {
+		t.Fatalf("expected System, Network, Resources stacked in order:\n%s", out)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "System") && strings.Contains(line, "Network") {
+			t.Fatalf("piped output (width 0) must not place sections side by side:\n%s", out)
+		}
+	}
+}
+
+func TestRender_WideTerminalPlacesSectionsSideBySide(t *testing.T) {
+	out := plain(t, 140)
+	assertFits(t, out, 140)
+	found := false
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "System") && strings.Contains(line, "Network") && strings.Contains(line, "Resources") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected all three section titles on one row at 140 columns:\n%s", out)
+	}
+	if strings.Count(out, "\n") > 10 {
+		t.Errorf("the side-by-side layout should be short, got %d lines:\n%s", strings.Count(out, "\n")+1, out)
+	}
+}
+
+func TestRender_MediumTerminalWrapsRows(t *testing.T) {
+	out := plain(t, 80)
+	assertFits(t, out, 80)
+	var titleRow string
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "System") {
+			titleRow = line
+		}
+	}
+	if !strings.Contains(titleRow, "Network") || strings.Contains(titleRow, "Resources") {
+		t.Fatalf("at 80 columns expect System+Network on one row, Resources below; got row %q in:\n%s", titleRow, out)
+	}
+}
+
+func TestRender_NeverOverflowsAnyWidth(t *testing.T) {
+	// The art is fitted upstream by the ascii ladder; this covers the body.
+	out := demoOutput()
+	out.Header.Art = ""
+	for _, w := range []int{1, 2, 3, 8, 20, 30, 40, 50, 60, 79, 100, 200} {
+		assertFits(t, NewRenderer(terminal.Env{Width: w}).Render(out, config.Default()), w)
+	}
+}
+
+func TestRender_NarrowDropsDetailBeforeClipping(t *testing.T) {
+	out := plain(t, 30)
+	if strings.Contains(out, "GiB") {
+		t.Errorf("details should be dropped at 30 columns:\n%s", out)
+	}
+	if !strings.Contains(out, "87%") {
+		t.Errorf("the value must survive when details are dropped:\n%s", out)
+	}
+}
+
+func TestRender_ColorsFollowLevels(t *testing.T) {
+	out := NewRenderer(terminal.Env{Profile: terminal.ProfileANSI}).Render(demoOutput(), config.Default())
+	if !strings.Contains(out, "\033[33m█████████") {
+		t.Errorf("a warn-level meter should be yellow:\n%q", out)
+	}
+	if !strings.Contains(out, "\033[32m██") {
+		t.Errorf("a normal meter should be green:\n%q", out)
+	}
+	if !strings.Contains(out, "\033[1m\033[31mroot") {
+		t.Errorf("root should be bold red:\n%q", out)
+	}
+}
+
+func TestRender_NoColorProfileEmitsNoEscapes(t *testing.T) {
+	if out := plain(t, 120); strings.Contains(out, "\033[") {
+		t.Fatalf("no-color output contains escapes:\n%q", out)
+	}
+}
+
+func TestRender_TitleUsesGradientAccent(t *testing.T) {
+	cfg := config.Default()
+	cfg.ASCII.Gradient = []string{"purple", "blue"}
+	out := NewRenderer(terminal.Env{Profile: terminal.ProfileANSI}).Render(demoOutput(), cfg)
+	if !strings.Contains(out, "\033[35mSystem") {
+		t.Fatalf("section titles should take the first gradient color:\n%q", out)
+	}
+}
+
+func TestRender_HostnameDisabledOmitsArt(t *testing.T) {
+	out := demoOutput()
+	out.Header.Art = ""
+	got := NewRenderer(terminal.Env{}).Render(out, config.Default())
+	if strings.HasPrefix(got, "\n\n") {
+		t.Fatalf("no art should leave no empty art block:\n%q", got)
+	}
+}
+
+func TestRender_ClipsWideRunesByColumns(t *testing.T) {
+	out := banner.Output{
+		Header: banner.Header{Hostname: "vm", Art: "VM"},
+		Sections: []banner.Section{
+			section("system", "System", banner.Item{Label: "User", Value: "田中太郎 /home/田中太郎"}),
 		},
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := NewRenderer(terminal.Env{})
-			result := r.Render(tt.output, tt.cfg)
-
-			for _, want := range tt.wantContains {
-				if !strings.Contains(result, want) {
-					t.Errorf("Render() compact result missing %q\nGot: %s", want, result)
-				}
-			}
-
-			if !strings.Contains(result, tt.separator) {
-				t.Errorf("Render() compact result missing separator %q", tt.separator)
-			}
-		})
-	}
+	assertFits(t, NewRenderer(terminal.Env{Width: 20}).Render(out, config.Default()), 20)
 }
 
 func TestOrderSections(t *testing.T) {
+	all := []banner.Section{{Key: "system"}, {Key: "network"}, {Key: "resources"}}
 	tests := []struct {
-		name     string
-		sections []banner.Section
-		desired  []string
-		wantKeys []string
+		name    string
+		desired []string
+		want    []string
 	}{
-		{
-			name: "ordered by desired list",
-			sections: []banner.Section{
-				{Key: "resources"},
-				{Key: "system"},
-				{Key: "network"},
-			},
-			desired:  []string{"system", "network", "resources"},
-			wantKeys: []string{"system", "network", "resources"},
-		},
-		{
-			name: "partial ordering",
-			sections: []banner.Section{
-				{Key: "resources"},
-				{Key: "system"},
-				{Key: "network"},
-			},
-			desired:  []string{"system"},
-			wantKeys: []string{"system"},
-		},
-		{
-			name: "alphabetical fallback when desired is empty",
-			sections: []banner.Section{
-				{Key: "resources"},
-				{Key: "system"},
-				{Key: "network"},
-			},
-			desired:  []string{},
-			wantKeys: []string{"network", "resources", "system"},
-		},
-		{
-			name: "desired order with missing keys",
-			sections: []banner.Section{
-				{Key: "system"},
-			},
-			desired:  []string{"network", "system", "resources"},
-			wantKeys: []string{"system"},
-		},
+		{"configured order", []string{"resources", "system", "network"}, []string{"resources", "system", "network"}},
+		{"subset", []string{"network"}, []string{"network"}},
+		{"header only keeps builder order", []string{"header"}, []string{"system", "network", "resources"}},
+		{"empty keeps builder order", nil, []string{"system", "network", "resources"}},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := orderSections(tt.sections, tt.desired)
-
-			if len(result) != len(tt.wantKeys) {
-				t.Fatalf("got %d sections, want %d", len(result), len(tt.wantKeys))
+			got := orderSections(all, tt.desired)
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %d sections, want %d", len(got), len(tt.want))
 			}
-
-			for i, want := range tt.wantKeys {
-				if result[i].Key != want {
-					t.Errorf("section[%d].Key = %q, want %q", i, result[i].Key, want)
+			for i, key := range tt.want {
+				if got[i].Key != key {
+					t.Errorf("section[%d] = %q, want %q", i, got[i].Key, key)
 				}
 			}
 		})
 	}
 }
 
-func TestRenderer_HighlightResource(t *testing.T) {
-	tests := []struct {
-		name         string
-		section      banner.Section
-		line         string
-		disableColor bool
-		wantContains string
-	}{
-		{
-			name: "memory high usage (red)",
-			section: banner.Section{
-				Key: "resources",
-				Data: map[string]any{
-					"memory_used_percent": 95,
-				},
-			},
-			line:         "Mem: 15GB used / 16GB",
-			disableColor: false,
-			wantContains: "Mem:",
-		},
-		{
-			name: "memory warning usage (yellow)",
-			section: banner.Section{
-				Key: "resources",
-				Data: map[string]any{
-					"memory_used_percent": 80,
-				},
-			},
-			line:         "Mem: 12GB used / 16GB",
-			disableColor: false,
-			wantContains: "Mem:",
-		},
-		{
-			name: "disk normal usage (no color)",
-			section: banner.Section{
-				Key: "resources",
-				Data: map[string]any{
-					"disk_used_percent": 50,
-				},
-			},
-			line:         "Disk: 250GB used / 500GB",
-			disableColor: false,
-			wantContains: "Disk:",
-		},
-		{
-			name: "no data map",
-			section: banner.Section{
-				Key:  "resources",
-				Data: nil,
-			},
-			line:         "Mem: 8GB used / 16GB",
-			disableColor: false,
-			wantContains: "Mem:",
-		},
-		{
-			name: "color disabled",
-			section: banner.Section{
-				Key: "resources",
-				Data: map[string]any{
-					"memory_used_percent": 95,
-				},
-			},
-			line:         "Mem: 15GB used / 16GB",
-			disableColor: true,
-			wantContains: "Mem: 15GB used / 16GB",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := NewRenderer(envFor(tt.disableColor))
-			result := r.highlightResource(tt.section, tt.line)
-
-			if !strings.Contains(result, tt.wantContains) {
-				t.Errorf("highlightResource() = %q, want to contain %q", result, tt.wantContains)
-			}
-
-			// When color is disabled, output should equal input
-			if tt.disableColor && result != tt.line {
-				t.Errorf("highlightResource() with disabled color = %q, want %q", result, tt.line)
-			}
-		})
-	}
-}
-
-func TestRenderer_WrapForPercent(t *testing.T) {
-	tests := []struct {
-		name         string
-		pct          int
-		line         string
-		disableColor bool
-		wantColor    bool
-	}{
-		{"critical threshold", 95, "Mem: 95%", false, true},
-		{"warning threshold", 80, "Mem: 80%", false, true},
-		{"normal threshold", 50, "Mem: 50%", false, false},
-		{"zero percent", 0, "Mem: 0%", false, false},
-		{"color disabled", 95, "Mem: 95%", true, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := NewRenderer(envFor(tt.disableColor))
-			result := r.wrapForPercent(tt.pct, tt.line)
-
-			hasColor := result != tt.line
-			if hasColor != tt.wantColor {
-				t.Errorf("wrapForPercent(%d, %q) hasColor=%v, want %v", tt.pct, tt.line, hasColor, tt.wantColor)
-			}
-		})
-	}
-}
-
-// envFor maps the old disable-color boolean used across these tests to a
-// terminal environment.
-func envFor(disable bool) terminal.Env {
-	if disable {
-		return terminal.Env{}
-	}
-	return terminal.Env{Profile: terminal.ProfileANSI}
-}
-
-func TestRenderer_CompactIsSingleLine(t *testing.T) {
-	out := banner.Output{
-		Header: banner.Header{
-			Hostname: "pve1",
-			Art:      "██\n██\n██",
-			Lines:    []string{"Linux 6.8"},
-		},
-		Sections: []banner.Section{
-			{Key: "system", Title: "System", Lines: []string{"Uptime: 1d"}},
-		},
-	}
+func TestRenderCompact(t *testing.T) {
 	cfg := config.Config{Layout: config.LayoutConfig{Compact: true}}
-	result := NewRenderer(terminal.Env{}).Render(out, cfg)
-
-	if strings.Contains(result, "\n") {
-		t.Fatalf("compact output must be a single line, got:\n%s", result)
+	out := NewRenderer(terminal.Env{}).Render(demoOutput(), cfg)
+	if strings.Contains(out, "\n") {
+		t.Fatalf("compact output must be one line:\n%s", out)
 	}
-	if !strings.Contains(result, "PVE1") {
-		t.Errorf("compact output missing hostname, got: %s", result)
-	}
-	if strings.Contains(result, "██") {
-		t.Errorf("compact output must not include ASCII art, got: %s", result)
-	}
-}
-
-func TestRenderer_ClipsBodyLinesToWidth(t *testing.T) {
-	out := banner.Output{
-		Header: banner.Header{Hostname: "host", Art: "HOST"},
-		Sections: []banner.Section{
-			{
-				Key:   "system",
-				Title: "System",
-				Lines: []string{"Last login: Fri, 10 Oct 2025 09:45:00 PDT from 203.0.113.10"},
-			},
-		},
-	}
-	cfg := config.Default()
-	result := NewRenderer(terminal.Env{Width: 40}).Render(out, cfg)
-
-	for _, line := range strings.Split(result, "\n") {
-		if n := len([]rune(line)); n > 40 {
-			t.Errorf("line exceeds width 40 (%d): %q", n, line)
+	for _, want := range []string{"PVE1", "Uptime: 4d 12h", "Mem: 23% 3.7/16.0 GiB", " | "} {
+		if !strings.Contains(out, want) {
+			t.Errorf("compact output missing %q: %s", want, out)
 		}
 	}
-	if !strings.Contains(result, "…") {
-		t.Errorf("expected clipped line to end with ellipsis, got:\n%s", result)
+	if strings.Contains(out, "█") {
+		t.Errorf("compact output must not include art or meters: %s", out)
 	}
 }
 
-func TestRenderer_UnconstrainedLeavesLinesAlone(t *testing.T) {
-	long := "Last login: Fri, 10 Oct 2025 09:45:00 PDT from 203.0.113.10"
-	out := banner.Output{
-		Header: banner.Header{Hostname: "host", Art: "HOST"},
-		Sections: []banner.Section{
-			{Key: "system", Title: "System", Lines: []string{long}},
-		},
+func TestRenderCompact_ClipsAndDedupes(t *testing.T) {
+	out := demoOutput()
+	out.Header.Hostname = "pve1.home.lan"
+	out.Header.Lines = append([]string{"pve1.home.lan"}, out.Header.Lines...)
+	cfg := config.Config{Layout: config.LayoutConfig{Compact: true}}
+
+	got := NewRenderer(terminal.Env{}).Render(out, cfg)
+	if strings.Count(strings.ToLower(got), "pve1.home.lan") != 1 {
+		t.Errorf("compact output repeats the hostname: %s", got)
 	}
-	result := NewRenderer(terminal.Env{}).Render(out, config.Default())
-	if !strings.Contains(result, long) {
-		t.Errorf("unconstrained render should not clip lines, got:\n%s", result)
-	}
+	assertFits(t, NewRenderer(terminal.Env{Width: 50}).Render(out, cfg), 50)
 }
 
 func TestRenderJSON(t *testing.T) {
-	out := banner.Output{
-		Header: banner.Header{
-			Hostname: "pve1",
-			Art:      "ART",
-			Lines:    []string{"Linux 6.8 (x86_64)"},
-		},
-		Sections: []banner.Section{
-			{Key: "resources", Title: "Resources", Lines: []string{"Mem: 23% used"}, Data: map[string]any{"memory_used_percent": 23}},
-			{Key: "system", Title: "System", Lines: []string{"Uptime: 1d"}},
-		},
-	}
 	cfg := config.Default()
+	out := demoOutput()
+	out.Sections[2].Data = map[string]any{"memory_used_percent": 23}
 	doc, err := RenderJSON(out, cfg)
 	if err != nil {
-		t.Fatalf("RenderJSON error: %v", err)
+		t.Fatal(err)
 	}
-	for _, want := range []string{`"hostname": "pve1"`, `"Linux 6.8 (x86_64)"`, `"memory_used_percent": 23`} {
-		if !strings.Contains(doc, want) {
-			t.Errorf("JSON missing %q:\n%s", want, doc)
-		}
+	var parsed struct {
+		Hostname string `json:"hostname"`
+		Sections []struct {
+			Key   string   `json:"key"`
+			Lines []string `json:"lines"`
+			Items []struct {
+				Label string   `json:"label"`
+				Value string   `json:"value"`
+				Meter *float64 `json:"meter"`
+				Level string   `json:"level"`
+			} `json:"items"`
+			Data map[string]any `json:"data"`
+		} `json:"sections"`
 	}
-	if strings.Contains(doc, "ART") {
-		t.Errorf("JSON should not include ASCII art:\n%s", doc)
+	if err := json.Unmarshal([]byte(doc), &parsed); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, doc)
 	}
-	// Sections must follow the configured order: system before resources.
-	if strings.Index(doc, `"key": "system"`) > strings.Index(doc, `"key": "resources"`) {
-		t.Errorf("JSON sections not in layout order:\n%s", doc)
+	if parsed.Hostname != "pve1" || strings.Contains(doc, "PVE1") {
+		t.Errorf("JSON should carry the hostname and no art:\n%s", doc)
 	}
-}
-
-func TestRenderer_CompactClipsToWidth(t *testing.T) {
-	out := banner.Output{
-		Header: banner.Header{
-			Hostname: "pve1",
-			Lines:    []string{"Linux 6.8 (x86_64)"},
-		},
-		Sections: []banner.Section{
-			{Key: "system", Title: "System", Lines: []string{
-				"Uptime: 4d 12h 30m",
-				"Last login: Fri, 10 Oct 2025 09:45:00 PDT (203.0.113.10)",
-			}},
-		},
+	if got := parsed.Sections[0].Key; got != "system" {
+		t.Errorf("sections must follow the layout order, first is %q", got)
 	}
-	cfg := config.Config{Layout: config.LayoutConfig{Compact: true}}
-	result := NewRenderer(terminal.Env{Width: 50}).Render(out, cfg)
-
-	if n := len([]rune(result)); n > 50 {
-		t.Errorf("compact line exceeds width 50 (%d): %q", n, result)
+	res := parsed.Sections[2]
+	if res.Lines[1] != "Disk: 87% 412.0/476.0 GiB" {
+		t.Errorf("lines keep the plain one-line form, got %q", res.Lines[1])
 	}
-	if !strings.HasSuffix(result, "…") {
-		t.Errorf("expected clipped compact line to end with ellipsis: %q", result)
+	if res.Items[1].Level != "warn" || res.Items[1].Meter == nil || *res.Items[1].Meter != 0.87 {
+		t.Errorf("items carry meter and level, got %+v", res.Items[1])
+	}
+	if res.Items[0].Level != "" {
+		t.Errorf("normal level is omitted, got %q", res.Items[0].Level)
+	}
+	if res.Data["memory_used_percent"] != float64(23) {
+		t.Errorf("data keeps raw numbers, got %v", res.Data)
 	}
 }
 
 func TestApplyConfig(t *testing.T) {
 	base := terminal.Env{Width: 120, Profile: terminal.ProfileANSI}
 
-	capped := ApplyConfig(base, config.Config{Layout: config.LayoutConfig{MaxWidth: 80}})
-	if capped.Width != 80 {
+	if capped := ApplyConfig(base, config.Config{Layout: config.LayoutConfig{MaxWidth: 80}}); capped.Width != 80 {
 		t.Errorf("max_width should cap detected width: got %d", capped.Width)
 	}
-
-	wider := ApplyConfig(base, config.Config{Layout: config.LayoutConfig{MaxWidth: 200}})
-	if wider.Width != 120 {
+	if wider := ApplyConfig(base, config.Config{Layout: config.LayoutConfig{MaxWidth: 200}}); wider.Width != 120 {
 		t.Errorf("max_width above terminal width must not widen: got %d", wider.Width)
 	}
-
 	unknown := ApplyConfig(terminal.Env{Profile: terminal.ProfileANSI}, config.Config{Layout: config.LayoutConfig{MaxWidth: 80}})
 	if unknown.Width != 80 {
 		t.Errorf("max_width should apply when terminal width is unknown: got %d", unknown.Width)
 	}
-
-	mono := ApplyConfig(base, config.Config{ASCII: config.ASCIIConfig{Monochrome: true}})
-	if mono.Profile != terminal.ProfileNoColor {
+	if mono := ApplyConfig(base, config.Config{ASCII: config.ASCIIConfig{Monochrome: true}}); mono.Profile != terminal.ProfileNoColor {
 		t.Errorf("monochrome config should force ProfileNoColor, got %v", mono.Profile)
 	}
-
-	untouched := ApplyConfig(base, config.Config{})
-	if untouched != base {
+	if untouched := ApplyConfig(base, config.Config{}); untouched != base {
 		t.Errorf("empty config should leave env unchanged: %+v", untouched)
-	}
-}
-
-func TestRenderer_ClipsSectionTitles(t *testing.T) {
-	out := banner.Output{
-		Header: banner.Header{Hostname: "vm", Art: "VM"},
-		Sections: []banner.Section{
-			{Key: "resources", Title: "Resources", Lines: []string{"Mem: 4%"}},
-		},
-	}
-	result := NewRenderer(terminal.Env{Width: 8}).Render(out, config.Default())
-	for _, line := range strings.Split(result, "\n") {
-		if n := len([]rune(line)); n > 8 {
-			t.Errorf("line exceeds width 8 (%d): %q", n, line)
-		}
-	}
-}
-
-func TestRenderer_CompactDoesNotDuplicateHostname(t *testing.T) {
-	out := banner.Output{
-		Header: banner.Header{
-			Hostname: "pve1.home.lan",
-			// The width ladder shortened the art, so the full hostname was
-			// added as an info line.
-			Lines: []string{"pve1.home.lan", "Linux 6.8 (x86_64)"},
-		},
-	}
-	cfg := config.Config{Layout: config.LayoutConfig{Compact: true}}
-	result := NewRenderer(terminal.Env{}).Render(out, cfg)
-
-	if strings.Count(strings.ToLower(result), "pve1.home.lan") != 1 {
-		t.Fatalf("compact output repeats the hostname: %q", result)
-	}
-	if !strings.Contains(result, "Linux 6.8 (x86_64)") {
-		t.Fatalf("compact output lost the OS line: %q", result)
-	}
-}
-
-func TestRenderer_TinyWidthsNeverOverflow(t *testing.T) {
-	out := banner.Output{
-		Header: banner.Header{Hostname: "vm", Art: "…"},
-		Sections: []banner.Section{
-			{Key: "system", Title: "System", Lines: []string{"Uptime: 4d 12h"}},
-		},
-	}
-	for _, width := range []int{1, 2, 3, 4} {
-		result := NewRenderer(terminal.Env{Width: width}).Render(out, config.Default())
-		for _, line := range strings.Split(result, "\n") {
-			if n := len([]rune(line)); n > width {
-				t.Errorf("width %d: line has %d columns: %q", width, n, line)
-			}
-		}
-	}
-}
-
-func TestRenderer_ClipsWideRunesByColumns(t *testing.T) {
-	out := banner.Output{
-		Header: banner.Header{Hostname: "vm", Art: "VM"},
-		Sections: []banner.Section{
-			{Key: "system", Title: "System", Lines: []string{"User: 田中太郎 /home/田中太郎"}},
-		},
-	}
-	result := NewRenderer(terminal.Env{Width: 20}).Render(out, config.Default())
-	for _, line := range strings.Split(result, "\n") {
-		if n := terminal.DisplayWidth(line); n > 20 {
-			t.Errorf("line occupies %d columns at width 20: %q", n, line)
-		}
 	}
 }

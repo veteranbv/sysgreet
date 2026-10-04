@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"unicode"
 
 	"github.com/veteranbv/sysgreet/internal/ascii"
 	"github.com/veteranbv/sysgreet/internal/collectors"
@@ -15,6 +16,9 @@ import (
 type Section struct {
 	Key   string
 	Title string
+	Items []Item
+	// Lines is the plain one-line form of each item, kept for compact
+	// output and JSON consumers.
 	Lines []string
 	Data  map[string]any
 }
@@ -89,6 +93,9 @@ func (b *Banner) buildHeader(snap collectors.Snapshot, cfg config.Config, env te
 		// Fallback to plain text when ASCII rendering fails.
 		art = ascii.Art{Text: name, Font: "plain", Color: "reset"}
 	}
+	if !cfg.Display.Hostname {
+		art = ascii.Art{}
+	}
 	lines := []string{}
 	if art.Shortened {
 		// The domain was dropped from the art to fit the terminal; keep
@@ -97,8 +104,10 @@ func (b *Banner) buildHeader(snap collectors.Snapshot, cfg config.Config, env te
 	}
 	if cfg.Display.OS {
 		line := snap.System.OS
-		if snap.System.OSVersion != "" {
-			line += " " + snap.System.OSVersion
+		if v := snap.System.OSVersion; v != "" && !hasDigit(line) {
+			// "macOS" needs its version; "Debian GNU/Linux 12
+			// (bookworm)" already names one, in its own words.
+			line += " " + v
 		}
 		if snap.System.Arch != "" {
 			line += " (" + snap.System.Arch + ")"
@@ -126,4 +135,8 @@ func (b *Banner) buildSections(snap collectors.Snapshot, cfg config.Config) []Se
 		}
 	}
 	return sections
+}
+
+func hasDigit(s string) bool {
+	return strings.ContainsFunc(s, unicode.IsDigit)
 }

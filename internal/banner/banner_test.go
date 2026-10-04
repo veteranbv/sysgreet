@@ -226,7 +226,8 @@ func TestBanner_buildHeader(t *testing.T) {
 
 			cfg := config.Config{
 				Display: config.DisplayConfig{
-					OS: tt.displayOS,
+					Hostname: true,
+					OS:       tt.displayOS,
 				},
 				ASCII: config.ASCIIConfig{
 					Font:       "standard",
@@ -396,6 +397,42 @@ func TestBanner_buildHeaderOmitsBlankOSLine(t *testing.T) {
 	for _, line := range header.Lines {
 		if strings.TrimSpace(line) == "" {
 			t.Fatalf("header contains a blank line: %q", header.Lines)
+		}
+	}
+}
+
+func TestBanner_buildHeaderHostnameDisabled(t *testing.T) {
+	b, err := New(collectors.Providers{}, mustRenderer(t), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.Display.Hostname = false
+	header := b.buildHeader(collectors.Snapshot{System: collectors.SystemInfo{Hostname: "pve1"}}, cfg, terminal.Env{})
+	if header.Art != "" {
+		t.Fatalf("display.hostname: false must drop the art, got %q", header.Art)
+	}
+	if header.Hostname != "pve1" {
+		t.Fatalf("the hostname stays available for JSON and compact output, got %q", header.Hostname)
+	}
+}
+
+func TestBuildHeader_OSVersionNotRepeated(t *testing.T) {
+	b, err := New(collectors.Providers{}, mustRenderer(t), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{Display: config.DisplayConfig{OS: true}}
+	for _, tt := range []struct{ os, version, want string }{
+		{"Debian GNU/Linux 12 (bookworm)", "12.7", "Debian GNU/Linux 12 (bookworm) (amd64)"},
+		{"Alpine Linux v3.20", "3.20.3", "Alpine Linux v3.20 (amd64)"},
+		{"Ubuntu 24.04.4 LTS", "24.04", "Ubuntu 24.04.4 LTS (amd64)"},
+		{"macOS", "15.1", "macOS 15.1 (amd64)"},
+	} {
+		snap := collectors.Snapshot{System: collectors.SystemInfo{Hostname: "h", OS: tt.os, OSVersion: tt.version, Arch: "amd64"}}
+		header := b.buildHeader(snap, cfg, terminal.Env{})
+		if len(header.Lines) != 1 || header.Lines[0] != tt.want {
+			t.Errorf("%s: got %q, want %q", tt.os, header.Lines, tt.want)
 		}
 	}
 }

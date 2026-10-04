@@ -1,7 +1,6 @@
 package render
 
 import (
-	"sort"
 	"strings"
 
 	"github.com/veteranbv/sysgreet/internal/banner"
@@ -15,13 +14,20 @@ const bodyIndent = "  "
 // Renderer formats banner output into terminal-friendly text.
 type Renderer struct {
 	colorizer Colorizer
+	profile   terminal.Profile
 	width     int
+	accent    string // color for section titles
 }
 
 // NewRenderer instantiates a renderer for the given terminal environment.
-// A zero env.Width leaves lines unclipped.
+// A zero env.Width leaves lines unclipped and stacks sections vertically.
 func NewRenderer(env terminal.Env) Renderer {
-	return Renderer{colorizer: NewColorizer(env.Profile), width: env.Width}
+	return Renderer{
+		colorizer: NewColorizer(env.Profile),
+		profile:   env.Profile,
+		width:     env.Width,
+		accent:    "cyan",
+	}
 }
 
 // ApplyConfig folds config-driven constraints into the detected terminal
@@ -42,44 +48,34 @@ func (r Renderer) Render(out banner.Output, cfg config.Config) string {
 	if cfg.Layout.Compact {
 		return r.renderCompact(out, cfg)
 	}
+	r.accent = accentColor(cfg)
 
-	var builder strings.Builder
-	builder.WriteString("\n")
-	builder.WriteString(out.Header.Art)
+	var lines []string
+	if out.Header.Art != "" {
+		lines = append(lines, "", out.Header.Art)
+	}
 	if len(out.Header.Lines) > 0 {
-		builder.WriteString("\n")
+		lines = append(lines, "")
 		for _, line := range out.Header.Lines {
-			builder.WriteString(r.clip(line, 0))
-			builder.WriteString("\n")
+			lines = append(lines, terminal.Dim(r.profile, r.clip(line, 0)))
 		}
 	}
+	if body := r.renderBody(orderSections(out.Sections, cfg.Layout.Sections)); len(body) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, body...)
+	}
+	return strings.TrimRight(strings.Join(lines, "\n"), "\n")
+}
 
-	// The indent has to fit inside the width cap too; drop it on absurdly
-	// narrow terminals rather than overflow.
-	indent := bodyIndent
-	if r.width > 0 && r.width <= len(bodyIndent) {
-		indent = ""
-	}
-
-	sections := orderSections(out.Sections, cfg.Layout.Sections)
-	for _, section := range sections {
-		if len(section.Lines) == 0 {
-			continue
-		}
-		builder.WriteString("\n")
-		builder.WriteString(r.clip(section.Title, 0))
-		builder.WriteString("\n")
-		for _, line := range section.Lines {
-			formatted := r.clip(line, len(indent))
-			if section.Key == "resources" {
-				formatted = r.highlightResource(section, formatted)
-			}
-			builder.WriteString(indent)
-			builder.WriteString(formatted)
-			builder.WriteString("\n")
+// accentColor ties section titles to the banner: the first gradient stop,
+// else the single art color.
+func accentColor(cfg config.Config) string {
+	for _, c := range append(append([]string{}, cfg.ASCII.Gradient...), cfg.ASCII.Color) {
+		if _, ok := terminal.Code(c); ok {
+			return strings.ToLower(c)
 		}
 	}
-	return strings.TrimRight(builder.String(), "\n")
+	return "cyan"
 }
 
 // renderCompact emits a single pipe-separated line using the plain hostname
@@ -121,10 +117,8 @@ func (r Renderer) clip(line string, indent int) string {
 
 func orderSections(sections []banner.Section, desired []string) []banner.Section {
 	lookup := make(map[string]banner.Section)
-	keys := []string{}
 	for _, s := range sections {
 		lookup[s.Key] = s
-		keys = append(keys, s.Key)
 	}
 	var ordered []banner.Section
 	for _, key := range desired {
@@ -133,48 +127,9 @@ func orderSections(sections []banner.Section, desired []string) []banner.Section
 		}
 	}
 	if len(ordered) == 0 {
-		sort.Strings(keys)
-		for _, key := range keys {
-			ordered = append(ordered, lookup[key])
-		}
+		// Nothing configured matched (for example sections: [header]);
+		// keep the order the builders produced.
+		return sections
 	}
 	return ordered
-}
-
-func (r Renderer) highlightResource(section banner.Section, line string) string {
-	data := section.Data
-	if data == nil {
-		return line
-	}
-	switch {
-	case strings.HasPrefix(line, "Mem:"):
-		if pct, ok := data["memory_used_percent"].(int); ok {
-			return r.wrapForPercent(pct, line)
-		}
-	case strings.HasPrefix(line, "Disk:"):
-		if pct, ok := data["disk_used_percent"].(int); ok {
-			return r.wrapForPercent(pct, line)
-		}
-	case strings.HasPrefix(line, "CPU:") && strings.Contains(line, "%"):
-		if pct, ok := data["cpu_usage_percent"].(float64); ok {
-			return r.wrapForPercent(int(pct+0.5), line)
-		}
-	}
-	return line
-}
-
-func (r Renderer) wrapForPercent(pct int, line string) string {
-	color := ""
-	switch {
-	case pct >= 90:
-		color = "red"
-	case pct >= 75:
-		color = "yellow"
-	case pct >= 0:
-		color = "green"
-	}
-	if color == "" || color == "green" {
-		return line
-	}
-	return r.colorizer.Wrap(color, line)
 }

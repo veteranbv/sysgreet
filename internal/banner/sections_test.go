@@ -332,7 +332,8 @@ func TestHumanDuration(t *testing.T) {
 		{"minutes only", time.Minute * 45, "45m"},
 		{"hours and minutes", time.Hour*2 + time.Minute*30, "2h 30m"},
 		{"days and hours", time.Hour*24*3 + time.Hour*5, "3d 5h"},
-		{"days hours minutes", time.Hour*24*2 + time.Hour*12 + time.Minute*33, "2d 12h 33m"},
+		{"days hours minutes", time.Hour*24*2 + time.Hour*12 + time.Minute*33, "2d 12h"},
+		{"days skip zero hours", time.Hour*24*2 + time.Minute*5, "2d"},
 		{"exact days", time.Hour * 24 * 7, "7d"},
 		{"exact hours", time.Hour * 3, "3h"},
 	}
@@ -341,48 +342,6 @@ func TestHumanDuration(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := humanDuration(tt.duration); got != tt.want {
 				t.Errorf("humanDuration(%v) = %q, want %q", tt.duration, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestFormatAddress(t *testing.T) {
-	tests := []struct {
-		name          string
-		addr          collectors.Address
-		withInterface bool
-		want          string
-	}{
-		{
-			name:          "with interface",
-			addr:          collectors.Address{IP: "192.168.1.1", Interface: "eth0"},
-			withInterface: true,
-			want:          "192.168.1.1 (eth0)",
-		},
-		{
-			name:          "without interface",
-			addr:          collectors.Address{IP: "192.168.1.1", Interface: "eth0"},
-			withInterface: false,
-			want:          "192.168.1.1",
-		},
-		{
-			name:          "empty interface with flag",
-			addr:          collectors.Address{IP: "192.168.1.1", Interface: ""},
-			withInterface: true,
-			want:          "192.168.1.1",
-		},
-		{
-			name:          "whitespace interface with flag",
-			addr:          collectors.Address{IP: "192.168.1.1", Interface: "   "},
-			withInterface: true,
-			want:          "192.168.1.1",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := formatAddress(tt.addr, tt.withInterface); got != tt.want {
-				t.Errorf("formatAddress(%+v, %v) = %q, want %q", tt.addr, tt.withInterface, got, tt.want)
 			}
 		})
 	}
@@ -398,6 +357,30 @@ func TestSystemSectionOmitsUnavailableData(t *testing.T) {
 	for _, line := range section.Lines {
 		if strings.Contains(line, "0001") || strings.Contains(line, "unknown") {
 			t.Fatalf("section renders placeholder data: %q", line)
+		}
+	}
+}
+
+func TestSystemSection_ExactValuesInData(t *testing.T) {
+	now := time.Date(2026, 10, 4, 9, 30, 0, 0, time.UTC)
+	snap := collectors.Snapshot{
+		System:    collectors.SystemInfo{Uptime: 90 * time.Minute, Datetime: now},
+		LastLogin: &collectors.LastLoginInfo{Timestamp: now.Add(-26 * time.Hour), Source: "203.0.113.10"},
+	}
+	cfg := config.Config{Display: config.DisplayConfig{Uptime: true, Datetime: true, LastLogin: true}}
+	sec, ok := SystemSectionBuilder{}.Build(snap, cfg)
+	if !ok {
+		t.Fatal("expected a section")
+	}
+	want := map[string]any{
+		"uptime_seconds":  int64(5400),
+		"time":            "2026-10-04T09:30:00Z",
+		"last_login":      "2026-10-03T07:30:00Z",
+		"last_login_from": "203.0.113.10",
+	}
+	for k, v := range want {
+		if sec.Data[k] != v {
+			t.Errorf("data[%q] = %v, want %v", k, sec.Data[k], v)
 		}
 	}
 }
