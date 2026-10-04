@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -16,7 +17,7 @@ func buildBinary(t *testing.T) string {
 	t.Helper()
 
 	tmpDir := t.TempDir()
-	binaryPath := filepath.Join(tmpDir, "sysgreet")
+	binaryPath := filepath.Join(tmpDir, binaryName())
 	cmd := exec.Command("go", "build", "-o", binaryPath, "../../../cmd/sysgreet")
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build binary: %v\n%s", err, output)
@@ -37,7 +38,7 @@ type configDoc struct {
 func runSysgreet(t *testing.T, bin, home string, stdin string, env []string, args ...string) (string, string, error) {
 	t.Helper()
 	cmd := exec.Command(bin, args...)
-	cmd.Env = append([]string{"PATH=" + os.Getenv("PATH"), "HOME=" + home}, env...)
+	cmd.Env = append(cleanEnv(home), env...)
 	cmd.Stdin = strings.NewReader(stdin)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -106,4 +107,27 @@ func TestInitConfigCreatesConfig(t *testing.T) {
 	if !strings.Contains(stderr, "created default config") {
 		t.Fatalf("expected stderr to report config creation, got: %s", stderr)
 	}
+}
+
+// binaryName adds the .exe suffix Windows needs to execute the binary.
+func binaryName() string {
+	if runtime.GOOS == "windows" {
+		return "sysgreet.exe"
+	}
+	return "sysgreet"
+}
+
+// cleanEnv is a minimal environment with home as the home directory, or no
+// home directory at all when home is empty.
+func cleanEnv(home string) []string {
+	env := []string{"PATH=" + os.Getenv("PATH")}
+	if runtime.GOOS == "windows" {
+		// The runtime needs SYSTEMROOT for networking and user lookups.
+		env = append(env, "SYSTEMROOT="+os.Getenv("SYSTEMROOT"))
+	}
+	if home != "" {
+		// Windows resolves the home directory from USERPROFILE.
+		env = append(env, "HOME="+home, "USERPROFILE="+home)
+	}
+	return env
 }

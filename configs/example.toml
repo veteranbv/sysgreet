@@ -32,8 +32,8 @@ monochrome = false
 compact = false
 # Cap the banner width in columns. 0 means use the detected terminal width.
 max_width = 0
-sections = ["header", "network", "system", "resources"]
+sections = ["header", "system", "network", "resources"]
 
 [network]
 show_interface_names = true
-max_interfaces = 5
+max_interfaces = 3

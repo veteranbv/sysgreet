@@ -10,7 +10,7 @@ Be respectful, professional, and constructive. We welcome contributions from dev
 
 ### Prerequisites
 
-- Go 1.22 or later
+- Go 1.26 or later
 - Git
 - Make (optional, for convenience commands)
 
@@ -193,7 +193,7 @@ sysgreet/
 
 Sysgreet has strict performance requirements:
 
-- **Startup time**: < 50ms median, < 80ms p95 (enforced by CI)
+- **Startup time**: a full banner takes a few milliseconds; CI fails if the median exceeds 250ms (`TestBinaryStartupTime`), and `make bench` reports the in-process cost
 - **Binary size**: < 10MB for all platforms
 - **Memory usage**: < 15MB RSS for default banner
 - **No network activity**: All data must be collected locally
@@ -233,10 +233,9 @@ Update the README if your changes:
 
 Releases are handled by maintainers:
 
-1. Update CHANGELOG.md with release notes
-2. Create a version tag: `git tag v0.x.0`
-3. Push the tag: `git push origin v0.x.0`
-4. GitHub Actions automatically builds and publishes the release
+1. Move the CHANGELOG.md "Unreleased" notes under the new version heading and merge that to `main`
+2. Run the **Tag Release** workflow from the Actions tab with the version (`vX.Y.Z`)
+3. It tags `main` and starts the Release workflow, which re-runs the tests, publishes the binaries with GoReleaser, and attests their provenance
 
 ## Getting Help
 

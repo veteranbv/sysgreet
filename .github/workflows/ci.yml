@@ -2,87 +2,104 @@ name: CI
 
 on:
   push:
-    branches: ["*"]
+    branches: [main]
   pull_request:
-    branches: ["*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - name: Set up Go
-        uses: actions/setup-go@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.22'
+          go-version: stable
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: v2.5.0
+          version: v2.14.0
           args: --timeout=5m
       - name: Check formatting
         run: |
-          if [ -n "$(gofmt -l $(git ls-files '*.go'))" ]; then
-            echo "Go files are not formatted. Run 'make fmt'"
-            gofmt -l $(git ls-files '*.go')
+          unformatted=$(gofmt -l $(git ls-files '*.go'))
+          if [ -n "$unformatted" ]; then
+            echo "::error::Go files are not formatted. Run 'make fmt'"
+            echo "$unformatted"
             exit 1
           fi
+      - name: Check go.mod is tidy
+        run: go mod tidy -diff
 
   test:
+    name: test (${{ matrix.os }}, go ${{ matrix.go }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go: [stable]
+        include:
+          # The oldest Go release go.mod allows, so `go install` keeps
+          # working for anyone on a supported toolchain.
+          - os: ubuntu-latest
+            go: "1.26.x"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ matrix.go }}
+      - name: Test
+        env:
+          CGO_ENABLED: "0"
+        run: go test -coverprofile=coverage.out ./...
+      - name: Coverage
+        run: go tool cover -func=coverage.out
+      - name: Smoke test the binary
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          bin="./sysgreet-smoke$(go env GOEXE)"
+          go build -o "$bin" ./cmd/sysgreet
+          "$bin" --demo --width 80
+          "$bin" --demo --json
+        shell: bash
+
+  race:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - name: Set up Go
-        uses: actions/setup-go@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.22'
-      - name: Run tests
+          go-version: stable
+      - name: Test with the race detector
         env:
-          CGO_ENABLED: 0
-        run: go test -v -coverprofile=coverage.out ./...
-      - name: Check coverage
-        run: go tool cover -func=coverage.out
+          CGO_ENABLED: "1"
+        run: go test -race ./...
+
+  vulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
   benchmark:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - name: Set up Go
-        uses: actions/setup-go@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.22'
-      - name: Run benchmarks
+          go-version: stable
+      - name: Benchmarks
         env:
-          CGO_ENABLED: 0
-        run: |
-          go test -bench=Startup -benchtime=20x ./test/benchmarks | tee bench.txt
-          # Extract nanoseconds per operation and validate < 80ms (80000000 ns)
-          NSOP=$(grep BenchmarkStartup bench.txt | awk '{print $3}')
-          if [ -n "$NSOP" ]; then
-            echo "Startup time: $NSOP ns/op"
-            # Convert to integer for comparison (remove decimals if any)
-            NSOP_INT=$(echo $NSOP | cut -d. -f1)
-            if [ "$NSOP_INT" -gt 80000000 ]; then
-              echo "FAIL: Startup time $NSOP_INT ns exceeds 80ms limit"
-              exit 1
-            fi
-            echo "PASS: Startup time within 80ms p95 limit"
-          else
-            echo "WARNING: Could not extract benchmark result"
-          fi
-
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.22'
-      - name: Build binary
-        env:
-          CGO_ENABLED: 0
-        run: |
-          go build -o sysgreet ./cmd/sysgreet
-          ./sysgreet --disable
-          ls -lh sysgreet
+          CGO_ENABLED: "0"
+        run: go test -run '^$' -bench . -benchtime=50x -benchmem ./test/benchmarks

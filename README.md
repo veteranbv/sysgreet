@@ -36,7 +36,7 @@ network or depending on external runtimes.
 
 ## Highlights
 
-- **Single static binary** - Go 1.22+, no CGO, no daemons, no service
+- **Single static binary** - Go 1.26+ to build, no CGO, no daemons, no service
   dependencies.
 - **Fits any terminal** - Sysgreet measures the terminal before printing and
   steps the banner down gracefully (shorter hostname, then a narrower font,
@@ -66,7 +66,7 @@ network or depending on external runtimes.
 ### Install the binary
 
 ```bash
-# Via Go (requires Go 1.22+)
+# Via Go (requires Go 1.26+)
 go install github.com/veteranbv/sysgreet/cmd/sysgreet@latest
 
 # Ensure Go's bin directory is in your PATH
@@ -189,11 +189,11 @@ display:
 layout:
   compact: false
   max_width: 0 # cap banner width in columns; 0 = detected terminal width
-  sections: ["header", "network", "system", "resources"]
+  sections: ["header", "system", "network", "resources"]
 
 network:
   show_interface_names: true
-  max_interfaces: 4
+  max_interfaces: 3
 ```
 
 Environment variables override everything (e.g.
@@ -289,7 +289,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed development guidelines, code
 ```bash
 git clone https://github.com/veteranbv/sysgreet.git
 cd sysgreet
-go mod tidy
+go mod download
 make test
 make bench
 ```
@@ -310,13 +310,19 @@ platform-specific improvements before diving in.
 
 ## Release process
 
-- CI (`.github/workflows/ci.yml`) runs `golangci-lint`, unit tests with race
-  detection, integration tests, and validates startup performance (<80ms p95).
+- CI (`.github/workflows/ci.yml`) runs `golangci-lint`, the test suite on
+  Linux, macOS and Windows (plus the oldest supported Go), the race detector,
+  `govulncheck`, and a startup check that fails if a full banner takes more
+  than 250ms. Actions are pinned to commit SHAs and Dependabot keeps them and
+  the Go modules current.
 - To cut a release, run the **Tag Release** workflow from the Actions tab
   with a `vX.Y.Z` version (or push a `v*` tag manually). It tags `main` and
   hands off to the Release workflow.
-- Releases use GoReleaser (`.goreleaser.yml`) to ship signed binaries for
-  Linux/macOS (amd64/arm64) and Windows (amd64), plus checksums.
+- Releases use GoReleaser (`.goreleaser.yml`) with the latest Go release to
+  build reproducible binaries for Linux, macOS and Windows (amd64 and arm64),
+  plus checksums. Every archive gets a signed build-provenance attestation;
+  verify a download with
+  `gh attestation verify sysgreet_*.tar.gz --repo veteranbv/sysgreet`.
 - `go install github.com/veteranbv/sysgreet@VERSION` is validated during the
   release workflow.
 

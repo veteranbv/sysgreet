@@ -4,7 +4,7 @@ import (
 	"net"
 	"testing"
 
-	gnet "github.com/shirou/gopsutil/v3/net"
+	gnet "github.com/shirou/gopsutil/v4/net"
 )
 
 func iface(name string, addrs ...string) gnet.InterfaceStat {

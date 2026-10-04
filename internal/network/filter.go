@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	gnet "github.com/shirou/gopsutil/v3/net"
+	gnet "github.com/shirou/gopsutil/v4/net"
 )
 
 // Address represents an IP address bound to an interface.
