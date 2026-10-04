@@ -204,3 +204,41 @@ func TestLoad_ExplicitConfigPathIsExclusive(t *testing.T) {
 		t.Fatalf("expected built-in defaults, got font %q from decoy config", cfg.ASCII.Font)
 	}
 }
+
+func TestLoad_BrokenFileFallsBackToDefaults(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	path := dir + "/broken.yaml"
+	if err := os.WriteFile(path, []byte("ascii: [oops"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SYSGREET_CONFIG", path)
+	t.Setenv("SYSGREET_DISPLAY_MEMORY", "false")
+
+	cfg, used, err := Load()
+	if err == nil {
+		t.Fatal("expected the parse error to be reported")
+	}
+	if used != "" {
+		t.Fatalf("a broken file must not be reported as used, got %q", used)
+	}
+	if cfg.ASCII.Font != Default().ASCII.Font {
+		t.Fatalf("expected defaults, got font %q", cfg.ASCII.Font)
+	}
+	if cfg.Display.Memory {
+		t.Fatal("env overrides must still apply when the file is broken")
+	}
+}
+
+func TestLoad_InvalidEnvBoolIsIgnored(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("SYSGREET_DISPLAY_MEMORY", "ture")
+
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Display.Memory {
+		t.Fatal("a typo in a boolean env var must not flip the setting off")
+	}
+}

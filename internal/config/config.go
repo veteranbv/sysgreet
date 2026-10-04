@@ -15,8 +15,12 @@ var (
 	errUnsupportedFormat = errors.New("unsupported config format")
 )
 
-// Load returns the merged configuration, the path that was used, and an error if loading fails.
-// Defaults are always applied; missing files are ignored.
+// Load returns the merged configuration and the path that was used.
+//
+// It always returns a usable configuration: defaults plus environment
+// overrides at minimum. When the config file cannot be read or parsed, the
+// file is skipped and the error is returned alongside the defaults, so a
+// typo in the config degrades the banner instead of breaking a login.
 func Load() (Config, string, error) {
 	cfg := Default()
 	candidatePaths := defaultConfigPaths()
@@ -29,45 +33,49 @@ func Load() (Config, string, error) {
 	}
 
 	var usedPath string
+	var loadErr error
 	for _, p := range candidatePaths {
 		if p == "" {
 			continue
 		}
 		expanded := expandPath(p)
 		info, err := os.Stat(expanded)
-		if err != nil {
+		if err != nil || info.IsDir() {
 			continue
 		}
-		if info.IsDir() {
-			continue
-		}
-
-		data, err := os.ReadFile(expanded)
+		raw, err := readRaw(expanded)
 		if err != nil {
-			return Config{}, "", fmt.Errorf("read config: %w", err)
+			loadErr = fmt.Errorf("%s: %w", expanded, err)
+			break
 		}
-
-		var raw rawConfig
-		switch strings.ToLower(filepath.Ext(expanded)) {
-		case ".yaml", ".yml":
-			if err := yaml.Unmarshal(data, &raw); err != nil {
-				return Config{}, "", fmt.Errorf("parse yaml config: %w", err)
-			}
-		case ".toml":
-			if err := toml.Unmarshal(data, &raw); err != nil {
-				return Config{}, "", fmt.Errorf("parse toml config: %w", err)
-			}
-		default:
-			return Config{}, "", fmt.Errorf("%w: %s", errUnsupportedFormat, expanded)
-		}
-
 		mergeConfig(&cfg, raw)
 		usedPath = expanded
 		break
 	}
 
 	applyEnvOverrides(&cfg)
-	return cfg, usedPath, nil
+	return cfg, usedPath, loadErr
+}
+
+func readRaw(path string) (rawConfig, error) {
+	var raw rawConfig
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return raw, fmt.Errorf("read config: %w", err)
+	}
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".yaml", ".yml":
+		if err := yaml.Unmarshal(data, &raw); err != nil {
+			return raw, fmt.Errorf("parse yaml config: %w", err)
+		}
+	case ".toml":
+		if err := toml.Unmarshal(data, &raw); err != nil {
+			return raw, fmt.Errorf("parse toml config: %w", err)
+		}
+	default:
+		return raw, errUnsupportedFormat
+	}
+	return raw, nil
 }
 
 func defaultConfigPaths() []string {
@@ -292,7 +300,8 @@ func lookupBool(key string) (bool, bool) {
 	case "0", "false", "no", "off":
 		return false, true
 	default:
-		return false, true
+		// A typo such as "ture" must not silently flip the setting.
+		return false, false
 	}
 }
 

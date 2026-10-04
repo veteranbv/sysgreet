@@ -95,13 +95,29 @@ sysgreet --version
 
 ### Wire into your shell
 
-| Shell            | Snippet                                                                                       |
-|------------------|------------------------------------------------------------------------------------------------|
-| Bash / Zsh       | `echo 'sysgreet' >> ~/.bashrc` (or `~/.zshrc`)                                                 |
-| Fish             | `echo 'sysgreet' >> ~/.config/fish/config.fish`                                               |
-| PowerShell       | `Add-Content $PROFILE 'sysgreet'`                                                             |
-| Windows Terminal | Add `sysgreet` to your profile script so it runs after each session attaches                  |
-| SSH `ForceCommand` | `ForceCommand /usr/local/bin/sysgreet && /bin/bash` (keeps banner even when no profile runs) |
+Run sysgreet only from interactive shells. Shell startup files also run for
+`scp`, `rsync`, `sftp` and `ssh host cmd`, and anything printed there corrupts
+those transfers. The snippets below guard against that; sysgreet also stays
+silent on its own in a non-interactive SSH session, as a second line of
+defense.
+
+```bash
+# Bash (~/.bashrc) or Zsh (~/.zshrc)
+[[ $- == *i* ]] && command -v sysgreet >/dev/null && sysgreet
+```
+
+```fish
+# Fish (~/.config/fish/config.fish)
+status is-interactive; and type -q sysgreet; and sysgreet
+```
+
+```powershell
+# PowerShell ($PROFILE); profiles only load for interactive sessions
+if (Get-Command sysgreet -ErrorAction SilentlyContinue) { sysgreet }
+```
+
+To check a remote host without logging in, give the session a terminal
+(`ssh -t pve1 sysgreet`) or pass `--force` (`ssh pve1 sysgreet --force`).
 
 **Special modes:**
 
@@ -185,12 +201,25 @@ Environment variables override everything (e.g.
 [`configs/example.yaml`](configs/example.yaml) and
 [`configs/example.toml`](configs/example.toml) for full references.
 
-### Bootstrap behaviour
+### Starter config
 
-- First run: sysgreet writes `~/.config/sysgreet/config.yaml` with curated defaults (all sections enabled, `ANSI Regular` font with blue-to-white gradient, metadata fields `created_at` and `version`).
-- Existing config: sysgreet leaves the file untouched by default. Provide `--config-policy prompt` (or `SYSGREET_CONFIG_POLICY=prompt`) to surface the `[K]eep/[O]verwrite/[C]ancel` flow, or `overwrite` to regenerate the defaults (a timestamped `.bak` is created first).
-- Non-interactive automation: use `--config-policy` or `SYSGREET_CONFIG_POLICY` to choose `prompt`, `keep`, or `overwrite`. When stdin is not a TTY (e.g. CI jobs), an explicit policy is required.
-- Flags beat environment variables so scripts can override fleet defaults (`SYSGREET_CONFIG_POLICY=overwrite bin/sysgreet --config-policy=keep`).
+A normal run never writes files or prompts: with no config file, sysgreet
+uses its built-in defaults. A broken config costs a one-line warning on
+stderr and the banner renders with defaults; it never fails a login.
+
+To get an editable starter config, run it once explicitly:
+
+```bash
+sysgreet --init-config        # writes ~/.config/sysgreet/config.yaml
+```
+
+- If the file already exists, an interactive run asks whether to
+  `[K]eep`, `[O]verwrite` or `[C]ancel`. Without a terminal it keeps the
+  existing file.
+- `--config-policy keep|overwrite|prompt` (or `SYSGREET_CONFIG_POLICY`)
+  decides ahead of time. The flag wins over the environment variable.
+- Overwriting renames the old file to a timestamped `.bak` first. Backups are
+  never deleted.
 
 ---
 

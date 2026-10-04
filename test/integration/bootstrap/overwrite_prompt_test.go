@@ -22,7 +22,7 @@ func TestOverwritePromptFlows(t *testing.T) {
 	}
 
 	run := func(input string) (stdout, stderr string) {
-		cmd := exec.Command(binaryPath)
+		cmd := exec.Command(binaryPath, "--init-config")
 		cmd.Env = append(os.Environ(), "SYSGREET_CONFIG="+cfgPath, "SYSGREET_ASSUME_TTY=1", "SYSGREET_CONFIG_POLICY=prompt")
 		cmd.Stdin = strings.NewReader(input)
 		var outBuf, errBuf bytes.Buffer

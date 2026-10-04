@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/veteranbv/sysgreet/internal/ascii"
 	"github.com/veteranbv/sysgreet/internal/banner"
@@ -14,6 +15,7 @@ import (
 	"github.com/veteranbv/sysgreet/internal/config"
 	"github.com/veteranbv/sysgreet/internal/render"
 	"github.com/veteranbv/sysgreet/internal/terminal"
+	"golang.org/x/term"
 )
 
 var (
@@ -34,35 +36,15 @@ func main() {
 
 func run() error {
 	ctx := context.Background()
-
 	settings := parseFlags()
 
-	if settings.Version {
-		v, c, d := buildInfo()
-		fmt.Printf("sysgreet %s (commit: %s, built: %s)\n", v, c, d)
-		return nil
-	}
-	if settings.Disable {
-		return nil
-	}
-	if settings.ConfigPath != "" {
-		// Reuse the SYSGREET_CONFIG plumbing so load and bootstrap agree
-		// on the path.
-		if err := os.Setenv("SYSGREET_CONFIG", settings.ConfigPath); err != nil {
-			return err
-		}
+	if done, err := runUtilityMode(ctx, settings); done {
+		return err
 	}
 
 	renderer, err := ascii.NewRenderer()
 	if err != nil {
 		return err
-	}
-
-	if settings.ListFonts {
-		for _, font := range renderer.Fonts() {
-			fmt.Println(font)
-		}
-		return nil
 	}
 
 	// Legacy Windows consoles need virtual terminal processing switched on
@@ -71,10 +53,7 @@ func run() error {
 	ansiOK := enableVirtualTerminal(os.Stdout)
 	env := terminal.DetectEnv(os.Stdout, settings.NoColor || !ansiOK)
 
-	cfg, err := loadConfig(ctx, settings)
-	if err != nil {
-		return err
-	}
+	cfg := loadConfig(settings)
 	env = render.ApplyConfig(env, cfg)
 	if settings.Width > 0 {
 		// The flag wins over both the detected width and layout.max_width.
@@ -98,23 +77,61 @@ func run() error {
 	return printBanner(output, cfg, env, settings.JSON)
 }
 
-// loadConfig bootstraps a config on first run and loads it. --text, --demo,
-// and --json are one-shot or scripted invocations that must never prompt,
-// so bootstrap only runs in normal mode.
-func loadConfig(ctx context.Context, settings runSettings) (config.Config, error) {
-	if settings.Text == "" && !settings.Demo && !settings.JSON {
-		if err := maybeBootstrap(ctx, settings); err != nil {
-			return config.Config{}, err
+// runUtilityMode handles every invocation that finishes without rendering a
+// banner. It reports whether the run is done.
+func runUtilityMode(ctx context.Context, settings runSettings) (bool, error) {
+	switch {
+	case settings.Version:
+		v, c, d := buildInfo()
+		fmt.Printf("sysgreet %s (commit: %s, built: %s)\n", v, c, d)
+		return true, nil
+	case settings.Disable || envTrue("SYSGREET_DISABLE"):
+		return true, nil
+	}
+
+	if settings.ConfigPath != "" {
+		// Reuse the SYSGREET_CONFIG plumbing so load and bootstrap agree
+		// on the path.
+		if err := os.Setenv("SYSGREET_CONFIG", settings.ConfigPath); err != nil {
+			return true, err
 		}
 	}
+
+	switch {
+	case settings.ListFonts:
+		renderer, err := ascii.NewRenderer()
+		if err != nil {
+			return true, err
+		}
+		for _, font := range renderer.Fonts() {
+			fmt.Println(font)
+		}
+		return true, nil
+	case settings.InitConfig:
+		return true, initConfig(ctx, settings)
+	}
+
+	bannerMode := settings.Text == "" && !settings.Demo && !settings.JSON
+	if bannerMode && !settings.Force && nonInteractiveSSH() {
+		// Shell rc files run for scp, rsync, sftp and `ssh host cmd` too;
+		// banner bytes on stdout would corrupt those protocols.
+		return true, nil
+	}
+	return false, nil
+}
+
+// loadConfig never fails: a broken config file costs a one-line warning,
+// not the banner. A login banner that errors on every login is worse than
+// one rendered with defaults.
+func loadConfig(settings runSettings) config.Config {
 	cfg, _, err := config.Load()
 	if err != nil {
-		return config.Config{}, err
+		fmt.Fprintf(os.Stderr, "sysgreet: ignoring config %v; using defaults\n", err)
 	}
 	if settings.Font != "" {
 		cfg.ASCII.Font = settings.Font
 	}
-	return cfg, nil
+	return cfg
 }
 
 func printBanner(output banner.Output, cfg config.Config, env terminal.Env, asJSON bool) error {
@@ -131,6 +148,8 @@ func printBanner(output banner.Output, cfg config.Config, env terminal.Env, asJS
 }
 
 type runSettings struct {
+	InitConfig bool
+	Force      bool
 	PolicyFlag string
 	ConfigPath string
 	Font       string
@@ -145,11 +164,13 @@ type runSettings struct {
 }
 
 func parseFlags() runSettings {
-	policyFlag := flag.String("config-policy", "", "Config bootstrap policy: prompt, keep, or overwrite")
+	initConfig := flag.Bool("init-config", false, "Write a starter config file and exit")
+	policyFlag := flag.String("config-policy", "", "With --init-config, what to do with an existing config: prompt, keep, or overwrite")
 	configPath := flag.String("config", "", "Path to a config file (overrides default lookup)")
 	font := flag.String("font", "", "Font override for this run (see --list-fonts)")
 	width := flag.Int("width", 0, "Assume this terminal width instead of detecting it")
-	disable := flag.Bool("disable", false, "Disable sysgreet output")
+	force := flag.Bool("force", false, "Print the banner even in a non-interactive SSH session")
+	disable := flag.Bool("disable", false, "Print nothing and exit")
 	demo := flag.Bool("demo", false, "Demo mode with 'SYSGREET' banner and fake data")
 	jsonOut := flag.Bool("json", false, "Emit the banner as JSON for scripting")
 	listFonts := flag.Bool("list-fonts", false, "List embedded fonts and exit")
@@ -157,20 +178,26 @@ func parseFlags() runSettings {
 	text := flag.String("text", "", "Render custom text as ASCII art (e.g., --text \"Tea Pot\")")
 	showVersion := flag.Bool("version", false, "Show version information")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "Usage of %s\n", os.Args[0])
+		w := flag.CommandLine.Output()
+		fmt.Fprintln(w, "sysgreet prints a login banner: the hostname in ASCII art plus system,")
+		fmt.Fprintln(w, "network, and resource details.")
+		fmt.Fprintln(w, "\nUsage: sysgreet [flags]\n\nFlags:")
 		flag.PrintDefaults()
-		fmt.Fprintln(flag.CommandLine.Output(), "\nEnvironment variables:")
-		fmt.Fprintln(flag.CommandLine.Output(), "  SYSGREET_CONFIG          Config file path (same as --config)")
-		fmt.Fprintln(flag.CommandLine.Output(), "  SYSGREET_CONFIG_POLICY   Config bootstrap policy (prompt|keep|overwrite)")
-		fmt.Fprintln(flag.CommandLine.Output(), "  SYSGREET_ASSUME_TTY      Force interactive prompts (testing/support)")
-		fmt.Fprintln(flag.CommandLine.Output(), "  NO_COLOR                 Disable colored output (same as --no-color)")
-		fmt.Fprintln(flag.CommandLine.Output(), "  CI                      When set, disables interactive prompts by default")
-		fmt.Fprintln(flag.CommandLine.Output(), "\nBootstrap:")
-		fmt.Fprintln(flag.CommandLine.Output(), "  First run writes curated defaults (ANSI Regular font with gradient, metadata).")
-		fmt.Fprintln(flag.CommandLine.Output(), "  Existing configs stay untouched unless you opt in via config policy.")
+		fmt.Fprintln(w, "\nEnvironment variables:")
+		fmt.Fprintln(w, "  SYSGREET_CONFIG          Config file path (same as --config)")
+		fmt.Fprintln(w, "  SYSGREET_CONFIG_POLICY   Policy for --init-config (prompt|keep|overwrite)")
+		fmt.Fprintln(w, "  SYSGREET_DISABLE         Print nothing when set to 1/true (fleet opt-out)")
+		fmt.Fprintln(w, "  SYSGREET_DEBUG           Log collector errors to stderr")
+		fmt.Fprintln(w, "  NO_COLOR                 Disable colored output (same as --no-color)")
+		fmt.Fprintln(w, "  SYSGREET_DISPLAY_*, SYSGREET_ASCII_*, SYSGREET_LAYOUT_*, SYSGREET_NETWORK_*")
+		fmt.Fprintln(w, "                           Override individual config keys (see README)")
+		fmt.Fprintln(w, "\nIn a non-interactive SSH session (scp, rsync, `ssh host cmd`) sysgreet")
+		fmt.Fprintln(w, "prints nothing so it cannot corrupt the transfer; use --force or `ssh -t`.")
 	}
 	flag.Parse()
 	return runSettings{
+		InitConfig: *initConfig,
+		Force:      *force,
 		PolicyFlag: *policyFlag,
 		ConfigPath: *configPath,
 		Font:       *font,
@@ -226,7 +253,7 @@ func runTextMode(renderer *ascii.Renderer, text string, cfg config.Config, env t
 }
 
 func resolveInteractivity() bool {
-	interactive := isInteractive()
+	interactive := isTerminal(os.Stdin)
 	if os.Getenv("CI") != "" {
 		interactive = false
 	}
@@ -236,35 +263,40 @@ func resolveInteractivity() bool {
 	return interactive
 }
 
-func maybeBootstrap(ctx context.Context, settings runSettings) error {
+// initConfig writes the starter config. It is the only path that writes to
+// disk; a normal banner run has no side effects.
+func initConfig(ctx context.Context, settings runSettings) error {
 	cfgPath := config.DefaultWritePath()
 	if cfgPath == "" {
-		return nil
-	}
-	policyEnv := os.Getenv("SYSGREET_CONFIG_POLICY")
-	info, statErr := os.Stat(cfgPath)
-	policyProvided := settings.PolicyFlag != "" || policyEnv != ""
-	configMissing := errors.Is(statErr, os.ErrNotExist)
-	configIsDir := statErr == nil && info.IsDir()
-	if statErr != nil && !configMissing {
-		return fmt.Errorf("stat config: %w", statErr)
-	}
-	if !policyProvided && !configMissing && !configIsDir {
-		return nil
+		return errors.New("cannot determine config path: no home directory")
 	}
 	io := bootstrap.IO{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}
 	_, err := bootstrap.Bootstrap(ctx, cfgPath, io, bootstrap.Options{
 		FlagPolicy:  settings.PolicyFlag,
-		EnvPolicy:   policyEnv,
+		EnvPolicy:   os.Getenv("SYSGREET_CONFIG_POLICY"),
 		Interactive: resolveInteractivity(),
 	})
 	return err
 }
 
-func isInteractive() bool {
-	info, err := os.Stdin.Stat()
-	if err != nil {
+// nonInteractiveSSH reports a session sshd started for a command rather
+// than a login shell: SSH variables are set but neither stdin nor stdout
+// is a terminal.
+func nonInteractiveSSH() bool {
+	if os.Getenv("SSH_CONNECTION") == "" && os.Getenv("SSH_CLIENT") == "" {
 		return false
 	}
-	return info.Mode()&os.ModeCharDevice != 0
+	return !isTerminal(os.Stdin) && !isTerminal(os.Stdout)
+}
+
+func isTerminal(f *os.File) bool {
+	return term.IsTerminal(int(f.Fd()))
+}
+
+func envTrue(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }

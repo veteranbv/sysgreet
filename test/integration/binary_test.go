@@ -85,7 +85,7 @@ func TestBinaryExecution(t *testing.T) {
 
 			// Set environment variables
 			cmd.Env = os.Environ()
-			cmd.Env = append(cmd.Env, "SYSGREET_CONFIG="+testConfigPath, "CI=1", "SYSGREET_CONFIG_POLICY=overwrite")
+			cmd.Env = append(cmd.Env, "SYSGREET_CONFIG="+testConfigPath, "CI=1", "SSH_CONNECTION=", "SSH_CLIENT=")
 			for k, v := range tt.env {
 				cmd.Env = append(cmd.Env, k+"="+v)
 			}
@@ -187,18 +187,20 @@ func TestBinaryWithInvalidConfig(t *testing.T) {
 		t.Fatalf("failed to write config: %v", err)
 	}
 
-	// Run with invalid config and "keep" policy - should fail to load the invalid YAML
+	// A broken config must degrade the banner, never fail the login.
 	cmd := exec.Command(binaryPath)
-	cmd.Env = append(os.Environ(), "SYSGREET_CONFIG="+configPath, "CI=1", "SYSGREET_CONFIG_POLICY=keep")
-
-	output, err := cmd.CombinedOutput()
-	if err == nil {
-		t.Errorf("expected error with invalid config, got success\nOutput: %s", output)
+	cmd.Env = append(os.Environ(), "SYSGREET_CONFIG="+configPath, "CI=1", "SSH_CONNECTION=", "SSH_CLIENT=")
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("invalid config must not fail the banner: %v\nstderr: %s", err, stderr.String())
 	}
-
-	// Should contain error message
-	if !strings.Contains(string(output), "sysgreet:") {
-		t.Errorf("error output should contain 'sysgreet:' prefix\nGot: %s", output)
+	if strings.TrimSpace(stdout.String()) == "" {
+		t.Error("expected the banner to render from defaults")
+	}
+	if !strings.Contains(stderr.String(), "sysgreet: ignoring config") || !strings.Contains(stderr.String(), configPath) {
+		t.Errorf("expected a one-line warning naming the config, got: %s", stderr.String())
 	}
 }
 
