@@ -227,15 +227,28 @@ sysgreet --init-config        # writes ~/.config/sysgreet/config.yaml
 
 ![Demo output](media/demo.jpg)
 
-- **System** - Hostname (ASCII art), OS name/version, architecture, uptime,
-  active user + home, current time, last login when available.
-- **Network** - Primary outbound interface based on routing table, filtered list
-  of secondary physical interfaces, SSH remote IP (from `SSH_CONNECTION` or
-  `SSH_CLIENT`). Loopback, link-local, Docker/VM, and down interfaces stay out of
-  view by default.
-- **Resources** - Memory, disk, and CPU metrics with highlight thresholds (≥75% in
-  yellow, ≥90% in red). Windows surfaces realtime CPU usage; Unix hosts show load
-  averages.
+The hostname art comes first, then the OS line, then three sections laid out
+side by side when the terminal is wide enough (see
+[`docs/examples/default-output.md`](docs/examples/default-output.md) for real
+output at 140, 80, 50 and 30 columns):
+
+```text
+System                                     Network                       Resources
+  Uptime      4d 12h                         eth0        192.168.1.42      Mem   ██░░░░░░░░  23%  3.7/16.0 GiB
+  User        demo                           tailscale0  100.101.42.7      Disk  █████████░  87%  412.0/476.0 GiB
+  Time        Sun 04 Oct 01:32 UTC           From        192.168.1.20      Load  █░░░░░░░░░ 0.45  8 cores
+  Last login  26h ago from 192.168.1.20
+```
+
+- **System** - Uptime, current user (bold red when you are root), local time,
+  and your previous login from the system's login history (Linux).
+- **Network** - The address carrying the default route first, then other
+  physical interfaces, each labeled by interface name. `From` is the SSH
+  client. Loopback, link-local, down interfaces, and container/VM bridges
+  (Docker, libvirt, CNI, LXD, Incus, Podman) stay out of view.
+- **Resources** - Usage meters for memory, the root filesystem (measured like
+  `df`), and the 1-minute load against the core count. Meters turn yellow at
+  75% and red at 90%. Windows shows realtime CPU usage instead of load.
 
 ### Terminal width handling
 
