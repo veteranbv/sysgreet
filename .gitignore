@@ -12,6 +12,8 @@ RELEASE.md
 # Go build artifacts
 bin/
 /sysgreet
+/sysgreet-smoke
+/dist/
 *.test
 *.exe
 *.exe~

@@ -1,0 +1,2 @@
+# Golden files are compared byte for byte; keep LF on every platform.
+*.golden text eol=lf

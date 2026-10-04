@@ -19,54 +19,91 @@ func (ResourceSectionBuilder) Enabled(cfg config.Config) bool {
 	return cfg.Display.Memory || cfg.Display.Disk || cfg.Display.Load
 }
 
-// Build renders resource lines and attaches metadata for highlighting.
+// Build renders each resource as a usage meter. Data keeps the raw
+// numbers for JSON consumers.
 func (ResourceSectionBuilder) Build(snap collectors.Snapshot, cfg config.Config) (Section, bool) {
-	var lines []string
-	meta := map[string]any{}
+	var items []Item
+	data := map[string]any{}
 
-	if cfg.Display.Memory && snap.Resources.Memory.Total > 0 {
-		used := snap.Resources.Memory.Total - snap.Resources.Memory.Available
-		pct := percent(used, snap.Resources.Memory.Total)
-		lines = append(lines, fmt.Sprintf("Mem: %s free / %s (%d%% used)", humanBytes(snap.Resources.Memory.Available), humanBytes(snap.Resources.Memory.Total), pct))
-		meta["memory_used_percent"] = pct
+	if mem := snap.Resources.Memory; cfg.Display.Memory && mem.Total > 0 {
+		used := mem.Total - min(mem.Available, mem.Total)
+		items = append(items, usageItem("Mem", used, mem.Total))
+		data["memory_used_percent"] = percent(used, mem.Total)
 	}
 
-	if cfg.Display.Disk && snap.Resources.Disk.Total > 0 {
-		pct := percent(snap.Resources.Disk.Used, snap.Resources.Disk.Total)
-		lines = append(lines, fmt.Sprintf("Disk: %s used / %s (%d%% used)", humanBytes(snap.Resources.Disk.Used), humanBytes(snap.Resources.Disk.Total), pct))
-		meta["disk_used_percent"] = pct
-	}
-
-	if cfg.Display.Load {
-		switch snap.Resources.CPU.Mode {
-		case "usage":
-			lines = append(lines, fmt.Sprintf("CPU: %.1f%%", snap.Resources.CPU.Usage))
-			meta["cpu_usage_percent"] = snap.Resources.CPU.Usage
-		case "load":
-			lines = append(lines, fmt.Sprintf("CPU Load: %.2f %.2f %.2f", snap.Resources.CPU.Load1, snap.Resources.CPU.Load5, snap.Resources.CPU.Load15))
-			meta["cpu_load_1"] = snap.Resources.CPU.Load1
+	if d := snap.Resources.Disk; cfg.Display.Disk && d.Total > 0 {
+		items = append(items, usageItem("Disk", d.Used, d.Total))
+		data["disk_used_percent"] = percent(d.Used, d.Total)
+		if d.Path != "" {
+			data["disk_path"] = d.Path
 		}
 	}
 
-	if len(lines) == 0 {
-		return Section{}, false
+	if cpu := snap.Resources.CPU; cfg.Display.Load {
+		switch cpu.Mode {
+		case "usage":
+			frac := cpu.Usage / 100
+			items = append(items, Item{
+				Label: "CPU",
+				Value: fmt.Sprintf("%.0f%%", cpu.Usage),
+				Meter: meter(frac),
+				Level: levelFor(frac),
+			})
+			data["cpu_usage_percent"] = cpu.Usage
+		case "load":
+			items = append(items, loadItem(cpu))
+			data["cpu_load_1"] = cpu.Load1
+			data["cpu_load_5"] = cpu.Load5
+			data["cpu_load_15"] = cpu.Load15
+			if cpu.Cores > 0 {
+				data["cpu_cores"] = cpu.Cores
+			}
+		}
 	}
-	return Section{Key: "resources", Title: "Resources", Lines: lines, Data: meta}, true
+
+	return newSection("resources", "Resources", items, data)
 }
 
-func humanBytes(value uint64) string {
-	if value == 0 {
-		return "0B"
+func usageItem(label string, used, total uint64) Item {
+	frac := float64(used) / float64(total)
+	return Item{
+		Label:  label,
+		Value:  fmt.Sprintf("%d%%", percent(used, total)),
+		Detail: bytePair(used, total),
+		Meter:  meter(frac),
+		Level:  levelFor(frac),
 	}
-	const unit = 1024
-	suffixes := []string{"B", "KB", "MB", "GB", "TB"}
-	v := float64(value)
+}
+
+// loadItem shows the 1-minute load against the core count: a load of 4 is
+// idle on 32 cores and saturated on 4.
+func loadItem(cpu collectors.CPUInfo) Item {
+	it := Item{Label: "Load", Value: fmt.Sprintf("%.2f", cpu.Load1)}
+	if cpu.Cores > 0 {
+		frac := cpu.Load1 / float64(cpu.Cores)
+		it.Meter = meter(frac)
+		it.Level = levelFor(frac)
+		it.Detail = fmt.Sprintf("%d cores", cpu.Cores)
+		if cpu.Cores == 1 {
+			it.Detail = "1 core"
+		}
+	}
+	return it
+}
+
+var byteUnits = []string{"B", "KiB", "MiB", "GiB", "TiB", "PiB"}
+
+// bytePair formats used/total in the unit that suits total, e.g.
+// "3.7/16.0 GiB".
+func bytePair(used, total uint64) string {
+	v := float64(total)
 	i := 0
-	for v >= unit && i < len(suffixes)-1 {
-		v /= unit
+	for v >= 1024 && i < len(byteUnits)-1 {
+		v /= 1024
 		i++
 	}
-	return fmt.Sprintf("%.1f%s", v, suffixes[i])
+	scale := math.Pow(1024, float64(i))
+	return fmt.Sprintf("%.1f/%.1f %s", float64(used)/scale, v, byteUnits[i])
 }
 
 func percent(part, total uint64) int {

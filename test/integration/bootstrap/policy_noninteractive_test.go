@@ -134,7 +134,7 @@ func TestNonInteractiveSSHRedirectToFileStillPrints(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(bin)
-	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "SSH_CONNECTION=203.0.113.5 50000 192.0.2.10 22"}
+	cmd.Env = append(cleanEnv(home), "SSH_CONNECTION=203.0.113.5 50000 192.0.2.10 22")
 	cmd.Stdout = out
 	runErr := cmd.Run()
 	_ = out.Close()
@@ -165,7 +165,7 @@ func TestInitConfigRefusesUnusablePaths(t *testing.T) {
 	// No HOME: refuse rather than write into the working directory.
 	cwd := t.TempDir()
 	cmd := exec.Command(bin, "--init-config")
-	cmd.Env = []string{"PATH=" + os.Getenv("PATH")}
+	cmd.Env = cleanEnv("")
 	cmd.Dir = cwd
 	if err := cmd.Run(); err == nil {
 		t.Fatal("--init-config without a home directory must fail")

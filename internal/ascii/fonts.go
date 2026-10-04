@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/common-nighthawk/go-figure"
 	"github.com/veteranbv/sysgreet/assets"
@@ -173,7 +174,25 @@ func (r *Renderer) resolveFont(name string) string {
 // strict mode calls log.Fatal on non-ASCII input).
 func (r *Renderer) rows(text, font string) []string {
 	fig := figure.NewFigureWithFont(text, bytes.NewReader(r.fonts[font]), false)
-	return fig.Slicify()
+	return trimRows(fig.Slicify())
+}
+
+// trimRows drops trailing spaces and blank rows. FIGlet fonts reserve
+// descender rows and pad glyphs, which otherwise leave a ragged right edge
+// and an empty band under the art.
+func trimRows(rows []string) []string {
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		// Some fonts pad with U+2001 EM QUAD rather than ASCII spaces.
+		out = append(out, strings.TrimRightFunc(row, unicode.IsSpace))
+	}
+	for len(out) > 0 && out[len(out)-1] == "" {
+		out = out[:len(out)-1]
+	}
+	for len(out) > 0 && out[0] == "" {
+		out = out[1:]
+	}
+	return out
 }
 
 func maxRowWidth(rows []string) int {

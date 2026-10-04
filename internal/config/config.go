@@ -41,7 +41,7 @@ func Load() (Config, string, error) {
 			continue
 		}
 		expanded := expandPath(p)
-		info, err := os.Stat(expanded)
+		info, err := os.Stat(expanded) //nolint:gosec // G703: the path is the user's own config, chosen by them
 		if err == nil && info.IsDir() {
 			err = errors.New("is a directory")
 		}
@@ -70,7 +70,7 @@ func Load() (Config, string, error) {
 
 func readRaw(path string) (rawConfig, error) {
 	var raw rawConfig
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // G703: the path is the user's own config, chosen by them
 	if err != nil {
 		return raw, fmt.Errorf("read config: %w", err)
 	}

@@ -8,7 +8,9 @@ import (
 )
 
 func TestLoad_DefaultsWhenNoFile(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	cfg, path, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
@@ -34,6 +36,7 @@ func TestLoad_DefaultsWhenNoFile(t *testing.T) {
 func TestLoad_YAMLOverrides(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 	cfgDir := dir + "/.config/sysgreet"
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -78,6 +81,7 @@ created_at: 2024-01-01T00:00:00Z
 func TestLoad_EnvOverrides(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 	t.Setenv("SYSGREET_DISPLAY_REMOTE_IP", "false")
 	t.Setenv("SYSGREET_LAYOUT_SECTIONS", "header,resources")
 	t.Setenv("SYSGREET_NETWORK_MAX_INTERFACES", "5")
@@ -120,6 +124,7 @@ func TestDefaultWritePathUsesEnv(t *testing.T) {
 func TestDefaultWritePathFallsBackToHome(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 	t.Setenv("SYSGREET_CONFIG", "")
 	got := DefaultWritePath()
 	expected := filepath.Join(dir, ".config", "sysgreet", "config.yaml")
@@ -131,6 +136,7 @@ func TestDefaultWritePathFallsBackToHome(t *testing.T) {
 func TestLoad_MaxWidthFromYAML(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 	cfgDir := dir + "/.config/sysgreet"
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -154,6 +160,7 @@ func TestLoad_MaxWidthFromYAML(t *testing.T) {
 func TestLoad_MaxWidthFromEnv(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 	t.Setenv("SYSGREET_LAYOUT_MAX_WIDTH", "90")
 
 	cfg, _, err := Load()
@@ -168,6 +175,7 @@ func TestLoad_MaxWidthFromEnv(t *testing.T) {
 func TestLoad_MaxWidthRejectsNegative(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 	t.Setenv("SYSGREET_LAYOUT_MAX_WIDTH", "-5")
 
 	cfg, _, err := Load()
@@ -182,6 +190,7 @@ func TestLoad_MaxWidthRejectsNegative(t *testing.T) {
 func TestLoad_ExplicitConfigPathIsExclusive(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 	cfgDir := dir + "/.config/sysgreet"
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -209,6 +218,7 @@ func TestLoad_ExplicitConfigPathIsExclusive(t *testing.T) {
 func TestLoad_BrokenFileFallsBackToDefaults(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 	path := dir + "/broken.yaml"
 	if err := os.WriteFile(path, []byte("ascii: [oops"), 0o644); err != nil {
 		t.Fatal(err)
@@ -232,7 +242,9 @@ func TestLoad_BrokenFileFallsBackToDefaults(t *testing.T) {
 }
 
 func TestLoad_InvalidEnvBoolIsIgnored(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("SYSGREET_DISPLAY_MEMORY", "ture")
 
 	cfg, _, err := Load()
@@ -247,6 +259,7 @@ func TestLoad_InvalidEnvBoolIsIgnored(t *testing.T) {
 func TestLoad_ExplicitDirectoryWarns(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 	t.Setenv("SYSGREET_CONFIG", dir)
 
 	cfg, _, err := Load()
@@ -266,15 +279,9 @@ func TestLoad_NoHomeReadsNothingRelative(t *testing.T) {
 	if err := os.WriteFile(cwd+"/.config/sysgreet/config.yaml", []byte("ascii:\n  font: \"slant\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	prev, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(cwd); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(prev) })
+	t.Chdir(cwd)
 	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
 	t.Setenv("SYSGREET_CONFIG", "")
 
 	cfg, used, _ := Load()

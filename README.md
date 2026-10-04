@@ -36,7 +36,7 @@ network or depending on external runtimes.
 
 ## Highlights
 
-- **Single static binary** - Go 1.22+, no CGO, no daemons, no service
+- **Single static binary** - Go 1.26+ to build, no CGO, no daemons, no service
   dependencies.
 - **Fits any terminal** - Sysgreet measures the terminal before printing and
   steps the banner down gracefully (shorter hostname, then a narrower font,
@@ -66,7 +66,7 @@ network or depending on external runtimes.
 ### Install the binary
 
 ```bash
-# Via Go (requires Go 1.22+)
+# Via Go (requires Go 1.26+)
 go install github.com/veteranbv/sysgreet/cmd/sysgreet@latest
 
 # Ensure Go's bin directory is in your PATH
@@ -189,11 +189,11 @@ display:
 layout:
   compact: false
   max_width: 0 # cap banner width in columns; 0 = detected terminal width
-  sections: ["header", "network", "system", "resources"]
+  sections: ["header", "system", "network", "resources"]
 
 network:
   show_interface_names: true
-  max_interfaces: 4
+  max_interfaces: 3
 ```
 
 Environment variables override everything (e.g.
@@ -227,15 +227,28 @@ sysgreet --init-config        # writes ~/.config/sysgreet/config.yaml
 
 ![Demo output](media/demo.jpg)
 
-- **System** - Hostname (ASCII art), OS name/version, architecture, uptime,
-  active user + home, current time, last login when available.
-- **Network** - Primary outbound interface based on routing table, filtered list
-  of secondary physical interfaces, SSH remote IP (from `SSH_CONNECTION` or
-  `SSH_CLIENT`). Loopback, link-local, Docker/VM, and down interfaces stay out of
-  view by default.
-- **Resources** - Memory, disk, and CPU metrics with highlight thresholds (≥75% in
-  yellow, ≥90% in red). Windows surfaces realtime CPU usage; Unix hosts show load
-  averages.
+The hostname art comes first, then the OS line, then three sections laid out
+side by side when the terminal is wide enough (see
+[`docs/examples/default-output.md`](docs/examples/default-output.md) for real
+output at 140, 80, 50 and 30 columns):
+
+```text
+System                                     Network                       Resources
+  Uptime      4d 12h                         eth0        192.168.1.42      Mem   ██░░░░░░░░  23%  3.7/16.0 GiB
+  User        demo                           tailscale0  100.101.42.7      Disk  █████████░  87%  412.0/476.0 GiB
+  Time        Sun 04 Oct 01:32 UTC           From        192.168.1.20      Load  █░░░░░░░░░ 0.45  8 cores
+  Last login  26h ago from 192.168.1.20
+```
+
+- **System** - Uptime, current user (bold red when you are root), local time,
+  and your previous login from the system's login history (Linux).
+- **Network** - The address carrying the default route first, then other
+  physical interfaces, each labeled by interface name. `From` is the SSH
+  client. Loopback, link-local, down interfaces, and container/VM bridges
+  (Docker, libvirt, CNI, LXD, Incus, Podman) stay out of view.
+- **Resources** - Usage meters for memory, the root filesystem (measured like
+  `df`), and the 1-minute load against the core count. Meters turn yellow at
+  75% and red at 90%. Windows shows realtime CPU usage instead of load.
 
 ### Terminal width handling
 
@@ -276,7 +289,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed development guidelines, code
 ```bash
 git clone https://github.com/veteranbv/sysgreet.git
 cd sysgreet
-go mod tidy
+go mod download
 make test
 make bench
 ```
@@ -297,13 +310,19 @@ platform-specific improvements before diving in.
 
 ## Release process
 
-- CI (`.github/workflows/ci.yml`) runs `golangci-lint`, unit tests with race
-  detection, integration tests, and validates startup performance (<80ms p95).
+- CI (`.github/workflows/ci.yml`) runs `golangci-lint`, the test suite on
+  Linux, macOS and Windows (plus the oldest supported Go), the race detector,
+  `govulncheck`, and a startup check that fails if a full banner takes more
+  than 250ms. Actions are pinned to commit SHAs and Dependabot keeps them and
+  the Go modules current.
 - To cut a release, run the **Tag Release** workflow from the Actions tab
   with a `vX.Y.Z` version (or push a `v*` tag manually). It tags `main` and
   hands off to the Release workflow.
-- Releases use GoReleaser (`.goreleaser.yml`) to ship signed binaries for
-  Linux/macOS (amd64/arm64) and Windows (amd64), plus checksums.
+- Releases use GoReleaser (`.goreleaser.yml`) with the latest Go release to
+  build reproducible binaries for Linux, macOS and Windows (amd64 and arm64),
+  plus checksums. Every archive gets a signed build-provenance attestation;
+  verify a download with
+  `gh attestation verify sysgreet_*.tar.gz --repo veteranbv/sysgreet`.
 - `go install github.com/veteranbv/sysgreet@VERSION` is validated during the
   release workflow.
 
