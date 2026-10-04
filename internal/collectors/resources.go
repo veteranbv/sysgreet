@@ -30,12 +30,12 @@ func (DefaultResourceCollector) CollectResources(ctx context.Context) (ResourceI
 		recordError("memory", err)
 	}
 
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		home = "."
-	}
-	if usage, err := disk.UsageWithContext(ctx, home); err == nil {
-		info.Disk = DiskInfo{Total: usage.Total, Used: usage.Total - usage.Free}
+	path := diskPath()
+	if usage, err := disk.UsageWithContext(ctx, path); err == nil {
+		// gopsutil's Free is space available to ordinary users and Used
+		// excludes root-reserved blocks, matching df; Total would count
+		// the reserve and overstate usage by its size.
+		info.Disk = DiskInfo{Path: path, Total: usage.Used + usage.Free, Used: usage.Used}
 	} else {
 		recordError("disk", err)
 	}
@@ -45,15 +45,36 @@ func (DefaultResourceCollector) CollectResources(ctx context.Context) (ResourceI
 		if err != nil {
 			recordError("cpu", err)
 		} else if len(values) > 0 {
-			info.CPU = CPUInfo{Usage: values[0], Mode: "usage"}
+			info.CPU = CPUInfo{Usage: values[0], Cores: runtime.NumCPU(), Mode: "usage"}
 		}
 	} else {
 		avg, err := load.AvgWithContext(ctx)
 		if err != nil {
 			recordError("cpu", err)
 		} else {
-			info.CPU = CPUInfo{Load1: avg.Load1, Load5: avg.Load5, Load15: avg.Load15, Mode: "load"}
+			info.CPU = CPUInfo{Load1: avg.Load1, Load5: avg.Load5, Load15: avg.Load15, Cores: runtime.NumCPU(), Mode: "load"}
 		}
 	}
 	return info, nil
 }
+
+// diskPath is the filesystem the banner reports: the root filesystem, or the
+// system drive on Windows. It holds the OS and usually the logs, so it is
+// the one that fills up and breaks the host. On macOS "/" is the sealed,
+// read-only system snapshot; the writable data volume is what fills up.
+func diskPath() string {
+	switch runtime.GOOS {
+	case "windows":
+		if drive := os.Getenv("SystemDrive"); drive != "" {
+			return drive + `\`
+		}
+		return `C:\`
+	case "darwin":
+		if info, err := os.Stat(macDataVolume); err == nil && info.IsDir() {
+			return macDataVolume
+		}
+	}
+	return "/"
+}
+
+const macDataVolume = "/System/Volumes/Data"

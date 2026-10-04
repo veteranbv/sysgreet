@@ -119,3 +119,32 @@ func (hangingSystemCollector) CollectSystem(ctx context.Context) (SystemInfo, er
 	time.Sleep(10 * time.Second)
 	return SystemInfo{}, nil
 }
+
+func TestParseSSHEnv(t *testing.T) {
+	tests := map[string]string{
+		"203.0.113.5 50000 192.0.2.10 22":    "203.0.113.5",
+		"::ffff:203.0.113.9 50000 ::1 22":    "203.0.113.9",
+		"2001:db8::5 50000 2001:db8::1 22":   "2001:db8::5",
+		"fe80::1%eth0 50000 fe80::2%eth0 22": "fe80::1",
+		"":                                   "",
+	}
+	for in, want := range tests {
+		if got := parseSSHEnv(in); got != want {
+			t.Errorf("parseSSHEnv(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestPrettyPlatform(t *testing.T) {
+	tests := []struct{ platform, version, want string }{
+		{"darwin", "15.0", "macOS 15.0"},
+		{"rhel", "9.4", "RHEL 9.4"},
+		{"opensuse-leap", "15.6", "openSUSE 15.6"},
+		{"Microsoft Windows 11 Pro", "10.0.26100", "Microsoft Windows 11 Pro 10.0.26100"},
+	}
+	for _, tt := range tests {
+		if got := prettyPlatform(tt.platform, tt.version); got != tt.want {
+			t.Errorf("prettyPlatform(%q, %q) = %q, want %q", tt.platform, tt.version, got, tt.want)
+		}
+	}
+}

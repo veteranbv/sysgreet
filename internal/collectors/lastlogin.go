@@ -3,45 +3,25 @@ package collectors
 import (
 	"context"
 	"os/user"
-	"time"
-
-	"github.com/shirou/gopsutil/v3/host"
 )
 
-// HostUsersLastLoginCollector derives last-login data from host user sessions.
-type HostUsersLastLoginCollector struct{}
+// WtmpLastLoginCollector reports the user's previous login from the login
+// history (wtmp). The current session is skipped: the banner should say
+// when you were last here, not that you just arrived.
+type WtmpLastLoginCollector struct{}
 
 // NewLastLoginCollector constructs the default last-login collector.
 func NewLastLoginCollector() LastLoginCollector {
-	return HostUsersLastLoginCollector{}
+	return WtmpLastLoginCollector{}
 }
 
-// CollectLastLogin implements LastLoginCollector.
-func (HostUsersLastLoginCollector) CollectLastLogin(ctx context.Context) (*LastLoginInfo, error) {
-	current, err := user.Current()
-	if err != nil {
-		recordError("last_login", err)
-	}
-	users, err := host.UsersWithContext(ctx)
+// CollectLastLogin implements LastLoginCollector. It returns nil, not an
+// error, when history is unavailable; the banner then omits the line.
+func (WtmpLastLoginCollector) CollectLastLogin(ctx context.Context) (*LastLoginInfo, error) {
+	u, err := user.Current()
 	if err != nil {
 		recordError("last_login", err)
 		return nil, nil
 	}
-	var latest *host.UserStat
-	for i := range users {
-		u := users[i]
-		if current != nil && u.User != current.Username {
-			continue
-		}
-		if latest == nil || u.Started > latest.Started {
-			latest = &u
-		}
-	}
-	if latest == nil {
-		return nil, nil
-	}
-	return &LastLoginInfo{
-		Timestamp: time.Unix(int64(latest.Started), 0),
-		Source:    latest.Host,
-	}, nil
+	return previousLogin(u.Username, currentTTY())
 }
