@@ -233,7 +233,7 @@ Update the README if your changes:
 
 Releases are handled by maintainers:
 
-1. Move the CHANGELOG.md "Unreleased" notes under the new version heading and merge that to `main`
+1. Move the CHANGELOG.md "Unreleased" notes under a `## vX.Y.Z` heading and merge that to `main`. That section becomes the GitHub release notes (`scripts/release-notes.sh vX.Y.Z` previews them), and Tag Release refuses a version without one
 2. Run the **Tag Release** workflow from the Actions tab with the version (`vX.Y.Z`)
 3. It tags `main` and starts the Release workflow, which re-runs the tests, publishes the binaries with GoReleaser, and attests their provenance
 
