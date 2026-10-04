@@ -4,19 +4,19 @@
 
 ### Changed
 
-- **A login banner never breaks a login** - Normal runs no longer write a config file or prompt. On a fresh host, `ssh host cmd`, cron, and Ansible runs previously exited with `config policy required` on every invocation until someone logged in with a terminal; they now render from built-in defaults. Writing the starter config is an explicit `sysgreet --init-config`, and `--config-policy`/`SYSGREET_CONFIG_POLICY` now only apply to it.
-- **Broken config degrades instead of failing** - A config that cannot be read or parsed prints one warning line and the banner renders with defaults (environment overrides still apply), exiting 0.
+- **A login banner never breaks a login** - Normal runs no longer write a config file or prompt. On a fresh host, `ssh host cmd`, cron, and Ansible runs previously exited with `config policy required` on every invocation until someone logged in with a terminal; they now render from built-in defaults. Writing the starter config is an explicit `sysgreet --init-config` (it refuses extensions the loader cannot read, and refuses to guess a location when there is no home directory), and `--config-policy`/`SYSGREET_CONFIG_POLICY` now only apply to it.
+- **Broken config degrades instead of failing** - A config that cannot be read or parsed (including an explicit `--config` path that is missing or a directory) prints one warning line and the banner renders with defaults (environment overrides still apply), exiting 0.
 
 ### Fixed
 
-- **Silent in non-interactive SSH sessions** - Shell startup files also run for scp, rsync, sftp, and `ssh host cmd`; a banner on stdout corrupts those transfers. When SSH variables are set and neither stdin nor stdout is a terminal, sysgreet now prints nothing. `--force` or `ssh -t` overrides it. The README's shell snippets now include the standard interactive-shell guard, and the `ForceCommand` example, which dropped the client's command and broke scp, sftp, and rsync, is gone.
+- **Silent in non-interactive SSH sessions** - Shell startup files also run for scp, rsync, sftp, and `ssh host cmd`; a banner on stdout corrupts those transfers. When SSH variables are set, neither stdin nor stdout is a terminal, and stdout is a pipe or socket, sysgreet now prints nothing. Redirecting to a file (`ssh host 'sysgreet > /etc/motd'`) still works. `--force` or `ssh -t` overrides it. The README's shell snippets now include the standard interactive-shell guard, and the `ForceCommand` example, which dropped the client's command and broke scp, sftp, and rsync, is gone.
 - **Config backups are never deleted** - Overwriting the config pruned every older backup, so a second overwrite lost the user's original file. All backups are now kept, and two overwrites in the same second no longer share a name.
 - **Invalid boolean environment values are ignored** - `SYSGREET_DISPLAY_MEMORY=ture` used to turn the setting off; it now leaves it unchanged.
 - **Policy errors name the bad value** - `invalid config policy value "replace" (want prompt, keep, or overwrite)`.
 
 ### Added
 
-- `SYSGREET_DISABLE=1` silences the banner for a user or host without editing shell startup files.
+- `SYSGREET_DISABLE=1` silences the banner for a user or host without editing shell startup files. Explicit commands such as `--init-config` and `--list-fonts` still run.
 - `--force` prints the banner even in a non-interactive SSH session.
 - `--help` now describes the tool and lists the environment overrides.
 

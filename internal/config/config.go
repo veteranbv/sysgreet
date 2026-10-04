@@ -28,8 +28,10 @@ func Load() (Config, string, error) {
 	// An explicit config path (--config or SYSGREET_CONFIG) is exclusive:
 	// if that file is absent we fall back to built-in defaults, never to a
 	// different config file the user didn't ask for.
+	explicit := false
 	if custom := os.Getenv("SYSGREET_CONFIG"); custom != "" {
 		candidatePaths = []string{custom}
+		explicit = true
 	}
 
 	var usedPath string
@@ -40,7 +42,16 @@ func Load() (Config, string, error) {
 		}
 		expanded := expandPath(p)
 		info, err := os.Stat(expanded)
-		if err != nil || info.IsDir() {
+		if err == nil && info.IsDir() {
+			err = errors.New("is a directory")
+		}
+		if err != nil {
+			// A missing default path is normal; a path the user named that
+			// exists but cannot be used deserves a warning.
+			if explicit && !errors.Is(err, os.ErrNotExist) {
+				loadErr = fmt.Errorf("%s: %w", expanded, err)
+				break
+			}
 			continue
 		}
 		raw, err := readRaw(expanded)
@@ -78,8 +89,22 @@ func readRaw(path string) (rawConfig, error) {
 	return raw, nil
 }
 
+// SupportedPath reports whether path has an extension Load can parse.
+func SupportedPath(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".yaml", ".yml", ".toml":
+		return true
+	}
+	return false
+}
+
 func defaultConfigPaths() []string {
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		// Without a home directory these would be relative paths, quietly
+		// reading or writing config in whatever directory we run from.
+		return nil
+	}
 	return []string{
 		filepath.Join(home, ".config", "sysgreet", "config.yaml"),
 		filepath.Join(home, ".config", "sysgreet", "config.yml"),

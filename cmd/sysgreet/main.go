@@ -80,12 +80,9 @@ func run() error {
 // runUtilityMode handles every invocation that finishes without rendering a
 // banner. It reports whether the run is done.
 func runUtilityMode(ctx context.Context, settings runSettings) (bool, error) {
-	switch {
-	case settings.Version:
+	if settings.Version {
 		v, c, d := buildInfo()
 		fmt.Printf("sysgreet %s (commit: %s, built: %s)\n", v, c, d)
-		return true, nil
-	case settings.Disable || envTrue("SYSGREET_DISABLE"):
 		return true, nil
 	}
 
@@ -109,6 +106,9 @@ func runUtilityMode(ctx context.Context, settings runSettings) (bool, error) {
 		return true, nil
 	case settings.InitConfig:
 		return true, initConfig(ctx, settings)
+	case settings.Disable || envTrue("SYSGREET_DISABLE"):
+		// Silences output, never an explicit command like --init-config.
+		return true, nil
 	}
 
 	bannerMode := settings.Text == "" && !settings.Demo && !settings.JSON
@@ -268,7 +268,10 @@ func resolveInteractivity() bool {
 func initConfig(ctx context.Context, settings runSettings) error {
 	cfgPath := config.DefaultWritePath()
 	if cfgPath == "" {
-		return errors.New("cannot determine config path: no home directory")
+		return errors.New("cannot determine config path: no home directory; pass --config")
+	}
+	if !config.SupportedPath(cfgPath) {
+		return fmt.Errorf("cannot write %s: config files must end in .yaml, .yml, or .toml", cfgPath)
 	}
 	io := bootstrap.IO{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}
 	_, err := bootstrap.Bootstrap(ctx, cfgPath, io, bootstrap.Options{
@@ -286,7 +289,17 @@ func nonInteractiveSSH() bool {
 	if os.Getenv("SSH_CONNECTION") == "" && os.Getenv("SSH_CLIENT") == "" {
 		return false
 	}
-	return !isTerminal(os.Stdin) && !isTerminal(os.Stdout)
+	if isTerminal(os.Stdin) || isTerminal(os.Stdout) {
+		return false
+	}
+	// Only a pipe or socket can carry an scp/rsync/sftp stream. Output
+	// redirected to a file (`ssh host 'sysgreet > /etc/motd'`) is wanted:
+	// suppressing it would leave the shell's truncated, empty file.
+	info, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&(os.ModeNamedPipe|os.ModeSocket) != 0
 }
 
 func isTerminal(f *os.File) bool {

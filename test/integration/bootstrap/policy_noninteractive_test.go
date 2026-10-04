@@ -2,6 +2,7 @@ package bootstrap_test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -115,5 +116,79 @@ func TestDisableEnvironmentVariable(t *testing.T) {
 	stdout, stderr, err := runSysgreet(t, bin, t.TempDir(), "", []string{"SYSGREET_DISABLE=1", "SYSGREET_ASSUME_TTY=1"})
 	if err != nil || stdout != "" || stderr != "" {
 		t.Fatalf("SYSGREET_DISABLE=1 must print nothing, got err=%v stdout=%q stderr=%q", err, stdout, stderr)
+	}
+}
+
+// `ssh host 'sysgreet > /etc/motd'` has SSH variables and no terminal, but
+// the output is wanted: only pipes and sockets carry protocol streams.
+func TestNonInteractiveSSHRedirectToFileStillPrints(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping policy integration in short mode")
+	}
+
+	bin := buildBinary(t)
+	home := t.TempDir()
+	motd := filepath.Join(t.TempDir(), "motd")
+	out, err := os.Create(motd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bin)
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "SSH_CONNECTION=203.0.113.5 50000 192.0.2.10 22"}
+	cmd.Stdout = out
+	runErr := cmd.Run()
+	_ = out.Close()
+	if runErr != nil {
+		t.Fatal(runErr)
+	}
+	if data, _ := os.ReadFile(motd); len(strings.TrimSpace(string(data))) == 0 {
+		t.Fatal("output redirected to a file must not be suppressed")
+	}
+}
+
+func TestInitConfigRefusesUnusablePaths(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping policy integration in short mode")
+	}
+
+	bin := buildBinary(t)
+	home := t.TempDir()
+
+	ini := filepath.Join(home, "sysgreet.ini")
+	if _, _, err := runSysgreet(t, bin, home, "", nil, "--init-config", "--config", ini); err == nil {
+		t.Fatal("--init-config must refuse an extension the loader cannot read")
+	}
+	if _, err := os.Stat(ini); err == nil {
+		t.Fatal("no file should be written for an unsupported extension")
+	}
+
+	// No HOME: refuse rather than write into the working directory.
+	cwd := t.TempDir()
+	cmd := exec.Command(bin, "--init-config")
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH")}
+	cmd.Dir = cwd
+	if err := cmd.Run(); err == nil {
+		t.Fatal("--init-config without a home directory must fail")
+	}
+	if entries, _ := os.ReadDir(cwd); len(entries) != 0 {
+		t.Fatalf("nothing may be written to the working directory, found %v", entries)
+	}
+}
+
+func TestDisableDoesNotBlockExplicitCommands(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping policy integration in short mode")
+	}
+
+	bin := buildBinary(t)
+	home := t.TempDir()
+	if _, stderr, err := runSysgreet(t, bin, home, "", []string{"SYSGREET_DISABLE=1"}, "--init-config"); err != nil {
+		t.Fatalf("--init-config failed: %v (%s)", err, stderr)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".config", "sysgreet", "config.yaml")); err != nil {
+		t.Fatal("SYSGREET_DISABLE must not turn --init-config into a no-op")
+	}
+	if stdout, _, _ := runSysgreet(t, bin, home, "", []string{"SYSGREET_DISABLE=1"}, "--list-fonts"); !strings.Contains(stdout, "ANSI Regular") {
+		t.Fatalf("SYSGREET_DISABLE must not silence --list-fonts, got %q", stdout)
 	}
 }

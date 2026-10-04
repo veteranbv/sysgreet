@@ -3,6 +3,7 @@ package config
 import (
 	os "os"
 	"path/filepath"
+	"strings"
 	testing "testing"
 )
 
@@ -240,5 +241,44 @@ func TestLoad_InvalidEnvBoolIsIgnored(t *testing.T) {
 	}
 	if !cfg.Display.Memory {
 		t.Fatal("a typo in a boolean env var must not flip the setting off")
+	}
+}
+
+func TestLoad_ExplicitDirectoryWarns(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("SYSGREET_CONFIG", dir)
+
+	cfg, _, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "is a directory") {
+		t.Fatalf("an explicit config path that is a directory should warn, got %v", err)
+	}
+	if cfg.ASCII.Font != Default().ASCII.Font {
+		t.Fatal("expected defaults")
+	}
+}
+
+func TestLoad_NoHomeReadsNothingRelative(t *testing.T) {
+	cwd := t.TempDir()
+	if err := os.MkdirAll(cwd+"/.config/sysgreet", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cwd+"/.config/sysgreet/config.yaml", []byte("ascii:\n  font: \"slant\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prev, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(cwd); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(prev) })
+	t.Setenv("HOME", "")
+	t.Setenv("SYSGREET_CONFIG", "")
+
+	cfg, used, _ := Load()
+	if used != "" || cfg.ASCII.Font == "slant" {
+		t.Fatalf("without a home directory no relative config may be read, used %q", used)
 	}
 }
