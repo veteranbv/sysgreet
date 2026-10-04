@@ -18,6 +18,7 @@ type SystemInfo struct {
 	Uptime      time.Duration
 	CurrentUser string
 	HomeDir     string
+	IsRoot      bool
 	Datetime    time.Time
 }
 
@@ -45,8 +46,11 @@ type MemoryInfo struct {
 	Available uint64
 }
 
-// DiskInfo captures disk usage snapshot.
+// DiskInfo captures disk usage the way df reports it. Total is the space
+// usable by ordinary users (Used + Available); blocks reserved for root are
+// excluded so the percentage matches df.
 type DiskInfo struct {
+	Path  string
 	Total uint64
 	Used  uint64
 }
@@ -57,6 +61,7 @@ type CPUInfo struct {
 	Load5  float64
 	Load15 float64
 	Usage  float64
+	Cores  int
 	Mode   string // "load" or "usage"
 }
 
@@ -210,9 +215,9 @@ func DemoSnapshot() Snapshot {
 	return Snapshot{
 		System: SystemInfo{
 			Hostname:    "sysgreet",
-			OS:          "Linux Server",
-			OSVersion:   "6.8.0",
-			Arch:        "x86_64",
+			OS:          "Ubuntu 24.04.4 LTS",
+			OSVersion:   "24.04",
+			Arch:        "amd64",
 			Uptime:      4*24*time.Hour + 12*time.Hour + 33*time.Minute,
 			CurrentUser: "demo",
 			HomeDir:     "/home/demo",
@@ -224,32 +229,34 @@ func DemoSnapshot() Snapshot {
 				Interface: "eth0",
 			},
 			Additional: []Address{
-				{IP: "10.8.0.2", Interface: "tun0"},
+				{IP: "100.101.42.7", Interface: "tailscale0"},
 			},
 		},
 		Session: SessionInfo{
-			RemoteAddr: "203.0.113.5",
+			RemoteAddr: "192.168.1.20",
 			Source:     "ssh",
 		},
 		Resources: ResourceInfo{
 			Memory: MemoryInfo{
-				Total:     16 * 1024 * 1024 * 1024,           // 16 GB
-				Available: 12*1024*1024*1024 + 300*1024*1024, // 12.3 GB
+				Total:     16 * 1024 * 1024 * 1024,           // 16 GiB
+				Available: 12*1024*1024*1024 + 300*1024*1024, // 12.3 GiB
 			},
 			Disk: DiskInfo{
-				Total: 512 * 1024 * 1024 * 1024, // 512 GB
-				Used:  210 * 1024 * 1024 * 1024, // 210 GB
+				Path:  "/",
+				Total: 476 * 1024 * 1024 * 1024,
+				Used:  412 * 1024 * 1024 * 1024, // past the warning threshold
 			},
 			CPU: CPUInfo{
 				Load1:  0.45,
 				Load5:  0.52,
 				Load15: 0.60,
+				Cores:  8,
 				Mode:   "load",
 			},
 		},
 		LastLogin: &LastLoginInfo{
-			Timestamp: now.Add(-2 * time.Hour),
-			Source:    "203.0.113.10",
+			Timestamp: now.Add(-26 * time.Hour),
+			Source:    "192.168.1.20",
 		},
 	}
 }

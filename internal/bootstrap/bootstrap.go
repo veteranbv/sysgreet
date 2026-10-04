@@ -92,7 +92,11 @@ func Bootstrap(ctx context.Context, cfgPath string, ioCfg IO, opts Options) (Res
 		if info.IsDir() {
 			return result, fmt.Errorf("bootstrap: config path %s is a directory", cfgPath)
 		}
-		return handleExistingConfig(ctx, cfgPath, ioCfg, result, resolution.Value, now)
+		policy := resolution.Value
+		if policy == PolicyPrompt && !resolution.Interactive {
+			policy = PolicyKeep
+		}
+		return handleExistingConfig(ctx, cfgPath, ioCfg, result, policy, now)
 	}
 
 	// statErr is non-nil here; check if it's something other than "not exists"
@@ -100,7 +104,7 @@ func Bootstrap(ctx context.Context, cfgPath string, ioCfg IO, opts Options) (Res
 		return result, fmt.Errorf("bootstrap: stat config: %w", statErr)
 	}
 
-	return createNewConfig(ctx, cfgPath, ioCfg.Stderr, result, resolution.Value, now)
+	return createNewConfig(ctx, cfgPath, ioCfg.Stderr, result, now)
 }
 
 func handleExistingConfig(ctx context.Context, cfgPath string, ioCfg IO, result Result, policy PolicyValue, now time.Time) (Result, error) {
@@ -163,15 +167,11 @@ func handlePromptOverwrite(ctx context.Context, cfgPath string, ioCfg IO, result
 	}
 }
 
-func createNewConfig(ctx context.Context, cfgPath string, stderr io.Writer, result Result, policy PolicyValue, now time.Time) (Result, error) {
+// createNewConfig writes the starter config. The policy only governs what
+// happens to an existing file, so a missing one is always created.
+func createNewConfig(ctx context.Context, cfgPath string, stderr io.Writer, result Result, now time.Time) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return result, err
-	}
-
-	if policy == PolicyKeep {
-		result.Action = ActionKept
-		logStatus(stderr, result.Action, cfgPath, "")
-		return result, nil
 	}
 
 	data, err := renderDefaultConfig(now, cfgPath)

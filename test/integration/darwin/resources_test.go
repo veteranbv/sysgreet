@@ -5,12 +5,11 @@ package darwin
 import (
 	"context"
 	"math"
-	"path/filepath"
 	"runtime"
 	"testing"
 
-	"github.com/shirou/gopsutil/v3/disk"
-	"github.com/shirou/gopsutil/v3/mem"
+	"github.com/shirou/gopsutil/v4/disk"
+	"github.com/shirou/gopsutil/v4/mem"
 
 	"github.com/veteranbv/sysgreet/internal/collectors"
 )
@@ -34,12 +33,17 @@ func TestResourceCollectorMatchesSystemStats(t *testing.T) {
 		t.Fatalf("memory total mismatch: got %d expected approx %d", info.Memory.Total, vm.Total)
 	}
 
-	homeUsage, err := disk.UsageWithContext(ctx, filepath.Clean("."))
+	if info.Disk.Path != "/System/Volumes/Data" {
+		t.Fatalf("disk path %q: want the writable data volume, not the sealed system snapshot", info.Disk.Path)
+	}
+	usage, err := disk.UsageWithContext(ctx, info.Disk.Path)
 	if err != nil {
 		t.Fatalf("Disk usage error: %v", err)
 	}
-	if !withinTolerance(float64(info.Disk.Total), float64(homeUsage.Total), 0.10) {
-		t.Fatalf("disk total mismatch got %d expected approx %d", info.Disk.Total, homeUsage.Total)
+	// The collector reports the filesystem the way df does: usable
+	// capacity is used plus available, excluding reserved blocks.
+	if want := usage.Used + usage.Free; !withinTolerance(float64(info.Disk.Total), float64(want), 0.10) {
+		t.Fatalf("disk total mismatch got %d expected approx %d", info.Disk.Total, want)
 	}
 }
 

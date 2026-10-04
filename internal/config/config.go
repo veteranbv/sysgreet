@@ -15,8 +15,12 @@ var (
 	errUnsupportedFormat = errors.New("unsupported config format")
 )
 
-// Load returns the merged configuration, the path that was used, and an error if loading fails.
-// Defaults are always applied; missing files are ignored.
+// Load returns the merged configuration and the path that was used.
+//
+// It always returns a usable configuration: defaults plus environment
+// overrides at minimum. When the config file cannot be read or parsed, the
+// file is skipped and the error is returned alongside the defaults, so a
+// typo in the config degrades the banner instead of breaking a login.
 func Load() (Config, string, error) {
 	cfg := Default()
 	candidatePaths := defaultConfigPaths()
@@ -24,54 +28,83 @@ func Load() (Config, string, error) {
 	// An explicit config path (--config or SYSGREET_CONFIG) is exclusive:
 	// if that file is absent we fall back to built-in defaults, never to a
 	// different config file the user didn't ask for.
+	explicit := false
 	if custom := os.Getenv("SYSGREET_CONFIG"); custom != "" {
 		candidatePaths = []string{custom}
+		explicit = true
 	}
 
 	var usedPath string
+	var loadErr error
 	for _, p := range candidatePaths {
 		if p == "" {
 			continue
 		}
 		expanded := expandPath(p)
-		info, err := os.Stat(expanded)
+		info, err := os.Stat(expanded) //nolint:gosec // G703: the path is the user's own config, chosen by them
+		if err == nil && info.IsDir() {
+			err = errors.New("is a directory")
+		}
 		if err != nil {
+			// A missing default path is normal; a path the user named that
+			// exists but cannot be used deserves a warning.
+			if explicit && !errors.Is(err, os.ErrNotExist) {
+				loadErr = fmt.Errorf("%s: %w", expanded, err)
+				break
+			}
 			continue
 		}
-		if info.IsDir() {
-			continue
-		}
-
-		data, err := os.ReadFile(expanded)
+		raw, err := readRaw(expanded)
 		if err != nil {
-			return Config{}, "", fmt.Errorf("read config: %w", err)
+			loadErr = fmt.Errorf("%s: %w", expanded, err)
+			break
 		}
-
-		var raw rawConfig
-		switch strings.ToLower(filepath.Ext(expanded)) {
-		case ".yaml", ".yml":
-			if err := yaml.Unmarshal(data, &raw); err != nil {
-				return Config{}, "", fmt.Errorf("parse yaml config: %w", err)
-			}
-		case ".toml":
-			if err := toml.Unmarshal(data, &raw); err != nil {
-				return Config{}, "", fmt.Errorf("parse toml config: %w", err)
-			}
-		default:
-			return Config{}, "", fmt.Errorf("%w: %s", errUnsupportedFormat, expanded)
-		}
-
 		mergeConfig(&cfg, raw)
 		usedPath = expanded
 		break
 	}
 
 	applyEnvOverrides(&cfg)
-	return cfg, usedPath, nil
+	return cfg, usedPath, loadErr
+}
+
+func readRaw(path string) (rawConfig, error) {
+	var raw rawConfig
+	data, err := os.ReadFile(path) //nolint:gosec // G703: the path is the user's own config, chosen by them
+	if err != nil {
+		return raw, fmt.Errorf("read config: %w", err)
+	}
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".yaml", ".yml":
+		if err := yaml.Unmarshal(data, &raw); err != nil {
+			return raw, fmt.Errorf("parse yaml config: %w", err)
+		}
+	case ".toml":
+		if err := toml.Unmarshal(data, &raw); err != nil {
+			return raw, fmt.Errorf("parse toml config: %w", err)
+		}
+	default:
+		return raw, errUnsupportedFormat
+	}
+	return raw, nil
+}
+
+// SupportedPath reports whether path has an extension Load can parse.
+func SupportedPath(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".yaml", ".yml", ".toml":
+		return true
+	}
+	return false
 }
 
 func defaultConfigPaths() []string {
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		// Without a home directory these would be relative paths, quietly
+		// reading or writing config in whatever directory we run from.
+		return nil
+	}
 	return []string{
 		filepath.Join(home, ".config", "sysgreet", "config.yaml"),
 		filepath.Join(home, ".config", "sysgreet", "config.yml"),
@@ -292,7 +325,8 @@ func lookupBool(key string) (bool, bool) {
 	case "0", "false", "no", "off":
 		return false, true
 	default:
-		return false, true
+		// A typo such as "ture" must not silently flip the setting.
+		return false, false
 	}
 }
 

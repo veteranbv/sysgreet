@@ -28,6 +28,7 @@ linters:
       - std-error-handling
     rules:
       - linters:
+          - goconst
           - gocyclo
           - gosec
           - unparam

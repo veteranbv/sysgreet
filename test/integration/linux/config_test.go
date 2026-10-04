@@ -69,7 +69,7 @@ layout:
 		t.Fatalf("expected system section to be disabled, got %s", txt)
 	}
 	if !strings.Contains(txt, "Network") {
-		t.Fatalf("expected network section present")
+		t.Fatalf("expected network section present, got:\n%s", txt)
 	}
 	if strings.Contains(txt, "Mem:") {
 		t.Fatalf("expected memory section disabled")

@@ -3,11 +3,14 @@ package config
 import (
 	os "os"
 	"path/filepath"
+	"strings"
 	testing "testing"
 )
 
 func TestLoad_DefaultsWhenNoFile(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	cfg, path, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
@@ -33,6 +36,7 @@ func TestLoad_DefaultsWhenNoFile(t *testing.T) {
 func TestLoad_YAMLOverrides(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 	cfgDir := dir + "/.config/sysgreet"
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -77,6 +81,7 @@ created_at: 2024-01-01T00:00:00Z
 func TestLoad_EnvOverrides(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 	t.Setenv("SYSGREET_DISPLAY_REMOTE_IP", "false")
 	t.Setenv("SYSGREET_LAYOUT_SECTIONS", "header,resources")
 	t.Setenv("SYSGREET_NETWORK_MAX_INTERFACES", "5")
@@ -119,6 +124,7 @@ func TestDefaultWritePathUsesEnv(t *testing.T) {
 func TestDefaultWritePathFallsBackToHome(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 	t.Setenv("SYSGREET_CONFIG", "")
 	got := DefaultWritePath()
 	expected := filepath.Join(dir, ".config", "sysgreet", "config.yaml")
@@ -130,6 +136,7 @@ func TestDefaultWritePathFallsBackToHome(t *testing.T) {
 func TestLoad_MaxWidthFromYAML(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 	cfgDir := dir + "/.config/sysgreet"
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -153,6 +160,7 @@ func TestLoad_MaxWidthFromYAML(t *testing.T) {
 func TestLoad_MaxWidthFromEnv(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 	t.Setenv("SYSGREET_LAYOUT_MAX_WIDTH", "90")
 
 	cfg, _, err := Load()
@@ -167,6 +175,7 @@ func TestLoad_MaxWidthFromEnv(t *testing.T) {
 func TestLoad_MaxWidthRejectsNegative(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 	t.Setenv("SYSGREET_LAYOUT_MAX_WIDTH", "-5")
 
 	cfg, _, err := Load()
@@ -181,6 +190,7 @@ func TestLoad_MaxWidthRejectsNegative(t *testing.T) {
 func TestLoad_ExplicitConfigPathIsExclusive(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 	cfgDir := dir + "/.config/sysgreet"
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -202,5 +212,80 @@ func TestLoad_ExplicitConfigPathIsExclusive(t *testing.T) {
 	}
 	if cfg.ASCII.Font != Default().ASCII.Font {
 		t.Fatalf("expected built-in defaults, got font %q from decoy config", cfg.ASCII.Font)
+	}
+}
+
+func TestLoad_BrokenFileFallsBackToDefaults(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+	path := dir + "/broken.yaml"
+	if err := os.WriteFile(path, []byte("ascii: [oops"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SYSGREET_CONFIG", path)
+	t.Setenv("SYSGREET_DISPLAY_MEMORY", "false")
+
+	cfg, used, err := Load()
+	if err == nil {
+		t.Fatal("expected the parse error to be reported")
+	}
+	if used != "" {
+		t.Fatalf("a broken file must not be reported as used, got %q", used)
+	}
+	if cfg.ASCII.Font != Default().ASCII.Font {
+		t.Fatalf("expected defaults, got font %q", cfg.ASCII.Font)
+	}
+	if cfg.Display.Memory {
+		t.Fatal("env overrides must still apply when the file is broken")
+	}
+}
+
+func TestLoad_InvalidEnvBoolIsIgnored(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("SYSGREET_DISPLAY_MEMORY", "ture")
+
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Display.Memory {
+		t.Fatal("a typo in a boolean env var must not flip the setting off")
+	}
+}
+
+func TestLoad_ExplicitDirectoryWarns(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+	t.Setenv("SYSGREET_CONFIG", dir)
+
+	cfg, _, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "is a directory") {
+		t.Fatalf("an explicit config path that is a directory should warn, got %v", err)
+	}
+	if cfg.ASCII.Font != Default().ASCII.Font {
+		t.Fatal("expected defaults")
+	}
+}
+
+func TestLoad_NoHomeReadsNothingRelative(t *testing.T) {
+	cwd := t.TempDir()
+	if err := os.MkdirAll(cwd+"/.config/sysgreet", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cwd+"/.config/sysgreet/config.yaml", []byte("ascii:\n  font: \"slant\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(cwd)
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+	t.Setenv("SYSGREET_CONFIG", "")
+
+	cfg, used, _ := Load()
+	if used != "" || cfg.ASCII.Font == "slant" {
+		t.Fatalf("without a home directory no relative config may be read, used %q", used)
 	}
 }

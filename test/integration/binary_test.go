@@ -1,10 +1,13 @@
 package integration
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -14,7 +17,7 @@ import (
 func TestBinaryExecution(t *testing.T) {
 	// Build the binary for testing
 	tmpDir := t.TempDir()
-	binaryPath := filepath.Join(tmpDir, "sysgreet")
+	binaryPath := filepath.Join(tmpDir, binaryName())
 	if testing.Short() {
 		t.Skip("skipping binary build in short mode")
 	}
@@ -85,7 +88,7 @@ func TestBinaryExecution(t *testing.T) {
 
 			// Set environment variables
 			cmd.Env = os.Environ()
-			cmd.Env = append(cmd.Env, "SYSGREET_CONFIG="+testConfigPath, "CI=1", "SYSGREET_CONFIG_POLICY=overwrite")
+			cmd.Env = append(cmd.Env, "SYSGREET_CONFIG="+testConfigPath, "CI=1", "SSH_CONNECTION=", "SSH_CLIENT=")
 			for k, v := range tt.env {
 				cmd.Env = append(cmd.Env, k+"="+v)
 			}
@@ -128,42 +131,45 @@ func TestBinaryExecution(t *testing.T) {
 	}
 }
 
+// TestBinaryStartupTime times what a login actually waits for: a full banner
+// with real collectors. The bound is generous on purpose (a real run takes a
+// few milliseconds); it exists to catch a collector that starts blocking,
+// not to benchmark shared CI runners.
 func TestBinaryStartupTime(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping performance test in short mode")
 	}
 
-	// Build the binary for testing
 	tmpDir := t.TempDir()
-	binaryPath := filepath.Join(tmpDir, "sysgreet")
-
-	buildCmd := exec.Command("go", "build", "-o", binaryPath, "../../cmd/sysgreet")
-	if err := buildCmd.Run(); err != nil {
-		t.Fatalf("failed to build binary: %v", err)
+	binaryPath := filepath.Join(tmpDir, binaryName())
+	if out, err := exec.Command("go", "build", "-o", binaryPath, "../../cmd/sysgreet").CombinedOutput(); err != nil {
+		t.Fatalf("failed to build binary: %v\n%s", err, out)
 	}
 
-	// Run multiple iterations to get average startup time
-	iterations := 10
-	var totalDuration time.Duration
-
+	const iterations = 15
+	durations := make([]time.Duration, 0, iterations)
 	for i := 0; i < iterations; i++ {
+		cmd := exec.Command(binaryPath, "--width", "120")
+		cmd.Env = append(os.Environ(), "HOME="+tmpDir, "USERPROFILE="+tmpDir, "SYSGREET_CONFIG=", "SSH_CONNECTION=", "SSH_CLIENT=", "SYSGREET_DISABLE=")
+		var stdout bytes.Buffer
+		cmd.Stdout = &stdout
 		start := time.Now()
-		cmd := exec.Command(binaryPath, "--disable")
 		if err := cmd.Run(); err != nil {
 			t.Fatalf("iteration %d failed: %v", i, err)
 		}
-		duration := time.Since(start)
-		totalDuration += duration
+		durations = append(durations, time.Since(start))
+		if stdout.Len() == 0 {
+			t.Fatalf("iteration %d printed nothing", i)
+		}
 	}
+	slices.Sort(durations)
+	median := durations[iterations/2]
 
-	avgDuration := totalDuration / time.Duration(iterations)
-	maxAllowed := 80 * time.Millisecond
-
-	if avgDuration > maxAllowed {
-		t.Errorf("average startup time %v exceeds maximum allowed %v", avgDuration, maxAllowed)
+	const limit = 250 * time.Millisecond
+	if median > limit {
+		t.Errorf("median startup %v exceeds %v (slowest %v)", median, limit, durations[iterations-1])
 	}
-
-	t.Logf("Average startup time over %d iterations: %v", iterations, avgDuration)
+	t.Logf("median full banner over %d runs: %v (fastest %v, slowest %v)", iterations, median, durations[0], durations[iterations-1])
 }
 
 func TestBinaryWithInvalidConfig(t *testing.T) {
@@ -173,7 +179,7 @@ func TestBinaryWithInvalidConfig(t *testing.T) {
 
 	// Build the binary
 	tmpDir := t.TempDir()
-	binaryPath := filepath.Join(tmpDir, "sysgreet")
+	binaryPath := filepath.Join(tmpDir, binaryName())
 
 	buildCmd := exec.Command("go", "build", "-o", binaryPath, "../../cmd/sysgreet")
 	if err := buildCmd.Run(); err != nil {
@@ -187,18 +193,20 @@ func TestBinaryWithInvalidConfig(t *testing.T) {
 		t.Fatalf("failed to write config: %v", err)
 	}
 
-	// Run with invalid config and "keep" policy - should fail to load the invalid YAML
+	// A broken config must degrade the banner, never fail the login.
 	cmd := exec.Command(binaryPath)
-	cmd.Env = append(os.Environ(), "SYSGREET_CONFIG="+configPath, "CI=1", "SYSGREET_CONFIG_POLICY=keep")
-
-	output, err := cmd.CombinedOutput()
-	if err == nil {
-		t.Errorf("expected error with invalid config, got success\nOutput: %s", output)
+	cmd.Env = append(os.Environ(), "SYSGREET_CONFIG="+configPath, "CI=1", "SSH_CONNECTION=", "SSH_CLIENT=")
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("invalid config must not fail the banner: %v\nstderr: %s", err, stderr.String())
 	}
-
-	// Should contain error message
-	if !strings.Contains(string(output), "sysgreet:") {
-		t.Errorf("error output should contain 'sysgreet:' prefix\nGot: %s", output)
+	if strings.TrimSpace(stdout.String()) == "" {
+		t.Error("expected the banner to render from defaults")
+	}
+	if !strings.Contains(stderr.String(), "sysgreet: ignoring config") || !strings.Contains(stderr.String(), configPath) {
+		t.Errorf("expected a one-line warning naming the config, got: %s", stderr.String())
 	}
 }
 
@@ -210,7 +218,7 @@ func TestBinaryMemoryFootprint(t *testing.T) {
 	// This test is informational and doesn't fail
 	// It helps track memory usage over time
 	tmpDir := t.TempDir()
-	binaryPath := filepath.Join(tmpDir, "sysgreet")
+	binaryPath := filepath.Join(tmpDir, binaryName())
 
 	buildCmd := exec.Command("go", "build", "-o", binaryPath, "../../cmd/sysgreet")
 	if err := buildCmd.Run(); err != nil {
@@ -236,7 +244,7 @@ func TestBinaryMemoryFootprint(t *testing.T) {
 // buildTestBinary compiles sysgreet into dir and returns its path.
 func buildTestBinary(t *testing.T, dir string) string {
 	t.Helper()
-	binaryPath := filepath.Join(dir, "sysgreet")
+	binaryPath := filepath.Join(dir, binaryName())
 	buildCmd := exec.Command("go", "build", "-o", binaryPath, "../../cmd/sysgreet")
 	if output, err := buildCmd.CombinedOutput(); err != nil {
 		t.Fatalf("failed to build binary: %v\nOutput: %s", err, output)
@@ -396,4 +404,12 @@ func TestBinaryJSONIsWidthIndependent(t *testing.T) {
 			t.Fatalf("JSON header depends on terminal width: %v vs %v", wide, narrow)
 		}
 	}
+}
+
+// binaryName adds the .exe suffix Windows needs to execute the binary.
+func binaryName() string {
+	if runtime.GOOS == "windows" {
+		return "sysgreet.exe"
+	}
+	return "sysgreet"
 }

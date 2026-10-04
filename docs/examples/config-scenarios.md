@@ -43,7 +43,7 @@ display:
 
 network:
   show_interface_names: true
-  max_interfaces: 5
+  max_interfaces: 3
 ```
 
 ## Narrow Terminals and tmux Panes
@@ -84,8 +84,13 @@ If resource values appear inconsistent with native tools:
 3. Ensure no virtualization layers hide physical interfaces (VPN, container bridges). Adjust `network.max_interfaces` or disable specific sections if needed.
 4. For Windows hosts, the CPU usage calculation relies on `cpu.PercentWithContext`. When the banner runs during login scripts, the first sampling window may be noisy; run the banner twice or lower the sampling interval via configuration if necessary.
 
-## Non-interactive Bootstrap Policies
+## Fleet Rollout
 
-- `CI=1 bin/sysgreet --config-policy=keep` ensures automation never writes a config file (ideal for hosts that manage configs externally).
-- `CI=1 SYSGREET_CONFIG_POLICY=overwrite bin/sysgreet` regenerates the default config on every run without prompting and keeps the latest backup beside the active file.
-- If both a flag and environment variable are provided, the flag wins so one-off jobs can override fleet defaults.
+- A normal banner run never writes a config file, so hosts that manage
+  configs externally need nothing special.
+- `sysgreet --init-config --config-policy=keep` writes the starter config only
+  where none exists; safe to run from provisioning on every deploy.
+- `sysgreet --init-config --config-policy=overwrite` regenerates the defaults,
+  keeping every earlier version as a timestamped `.bak`.
+- `SYSGREET_DISABLE=1` silences the banner for a host or user without editing
+  shell startup files.

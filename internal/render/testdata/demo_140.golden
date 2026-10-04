@@ -1,0 +1,9 @@
+
+PVE1
+
+Ubuntu 24.04.4 LTS (amd64)
+
+System                                     Network                 Resources
+  Uptime      4d 12h                         eth0  192.168.1.42      Mem   ██░░░░░░░░  23%  3.7/16.0 GiB
+  User        root                           From  192.168.1.20      Disk  █████████░  87%  412.0/476.0 GiB
+  Last login  26h ago from 192.168.1.20                              Load  █░░░░░░░░░ 0.45  8 cores

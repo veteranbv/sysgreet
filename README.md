@@ -36,7 +36,7 @@ network or depending on external runtimes.
 
 ## Highlights
 
-- **Single static binary** - Go 1.22+, no CGO, no daemons, no service
+- **Single static binary** - Go 1.26+ to build, no CGO, no daemons, no service
   dependencies.
 - **Fits any terminal** - Sysgreet measures the terminal before printing and
   steps the banner down gracefully (shorter hostname, then a narrower font,
@@ -66,7 +66,7 @@ network or depending on external runtimes.
 ### Install the binary
 
 ```bash
-# Via Go (requires Go 1.22+)
+# Via Go (requires Go 1.26+)
 go install github.com/veteranbv/sysgreet/cmd/sysgreet@latest
 
 # Ensure Go's bin directory is in your PATH
@@ -95,13 +95,29 @@ sysgreet --version
 
 ### Wire into your shell
 
-| Shell            | Snippet                                                                                       |
-|------------------|------------------------------------------------------------------------------------------------|
-| Bash / Zsh       | `echo 'sysgreet' >> ~/.bashrc` (or `~/.zshrc`)                                                 |
-| Fish             | `echo 'sysgreet' >> ~/.config/fish/config.fish`                                               |
-| PowerShell       | `Add-Content $PROFILE 'sysgreet'`                                                             |
-| Windows Terminal | Add `sysgreet` to your profile script so it runs after each session attaches                  |
-| SSH `ForceCommand` | `ForceCommand /usr/local/bin/sysgreet && /bin/bash` (keeps banner even when no profile runs) |
+Run sysgreet only from interactive shells. Shell startup files also run for
+`scp`, `rsync`, `sftp` and `ssh host cmd`, and anything printed there corrupts
+those transfers. The snippets below guard against that; sysgreet also stays
+silent on its own in a non-interactive SSH session, as a second line of
+defense.
+
+```bash
+# Bash (~/.bashrc) or Zsh (~/.zshrc)
+[[ $- == *i* ]] && command -v sysgreet >/dev/null && sysgreet
+```
+
+```fish
+# Fish (~/.config/fish/config.fish)
+status is-interactive; and type -q sysgreet; and sysgreet
+```
+
+```powershell
+# PowerShell ($PROFILE); profiles only load for interactive sessions
+if (Get-Command sysgreet -ErrorAction SilentlyContinue) { sysgreet }
+```
+
+To check a remote host without logging in, give the session a terminal
+(`ssh -t pve1 sysgreet`) or pass `--force` (`ssh pve1 sysgreet --force`).
 
 **Special modes:**
 
@@ -173,11 +189,11 @@ display:
 layout:
   compact: false
   max_width: 0 # cap banner width in columns; 0 = detected terminal width
-  sections: ["header", "network", "system", "resources"]
+  sections: ["header", "system", "network", "resources"]
 
 network:
   show_interface_names: true
-  max_interfaces: 4
+  max_interfaces: 3
 ```
 
 Environment variables override everything (e.g.
@@ -185,12 +201,25 @@ Environment variables override everything (e.g.
 [`configs/example.yaml`](configs/example.yaml) and
 [`configs/example.toml`](configs/example.toml) for full references.
 
-### Bootstrap behaviour
+### Starter config
 
-- First run: sysgreet writes `~/.config/sysgreet/config.yaml` with curated defaults (all sections enabled, `ANSI Regular` font with blue-to-white gradient, metadata fields `created_at` and `version`).
-- Existing config: sysgreet leaves the file untouched by default. Provide `--config-policy prompt` (or `SYSGREET_CONFIG_POLICY=prompt`) to surface the `[K]eep/[O]verwrite/[C]ancel` flow, or `overwrite` to regenerate the defaults (a timestamped `.bak` is created first).
-- Non-interactive automation: use `--config-policy` or `SYSGREET_CONFIG_POLICY` to choose `prompt`, `keep`, or `overwrite`. When stdin is not a TTY (e.g. CI jobs), an explicit policy is required.
-- Flags beat environment variables so scripts can override fleet defaults (`SYSGREET_CONFIG_POLICY=overwrite bin/sysgreet --config-policy=keep`).
+A normal run never writes files or prompts: with no config file, sysgreet
+uses its built-in defaults. A broken config costs a one-line warning on
+stderr and the banner renders with defaults; it never fails a login.
+
+To get an editable starter config, run it once explicitly:
+
+```bash
+sysgreet --init-config        # writes ~/.config/sysgreet/config.yaml
+```
+
+- If the file already exists, an interactive run asks whether to
+  `[K]eep`, `[O]verwrite` or `[C]ancel`. Without a terminal it keeps the
+  existing file.
+- `--config-policy keep|overwrite|prompt` (or `SYSGREET_CONFIG_POLICY`)
+  decides ahead of time. The flag wins over the environment variable.
+- Overwriting renames the old file to a timestamped `.bak` first. Backups are
+  never deleted.
 
 ---
 
@@ -198,15 +227,28 @@ Environment variables override everything (e.g.
 
 ![Demo output](media/demo.jpg)
 
-- **System** - Hostname (ASCII art), OS name/version, architecture, uptime,
-  active user + home, current time, last login when available.
-- **Network** - Primary outbound interface based on routing table, filtered list
-  of secondary physical interfaces, SSH remote IP (from `SSH_CONNECTION` or
-  `SSH_CLIENT`). Loopback, link-local, Docker/VM, and down interfaces stay out of
-  view by default.
-- **Resources** - Memory, disk, and CPU metrics with highlight thresholds (≥75% in
-  yellow, ≥90% in red). Windows surfaces realtime CPU usage; Unix hosts show load
-  averages.
+The hostname art comes first, then the OS line, then three sections laid out
+side by side when the terminal is wide enough (see
+[`docs/examples/default-output.md`](docs/examples/default-output.md) for real
+output at 140, 80, 50 and 30 columns):
+
+```text
+System                                     Network                       Resources
+  Uptime      4d 12h                         eth0        192.168.1.42      Mem   ██░░░░░░░░  23%  3.7/16.0 GiB
+  User        demo                           tailscale0  100.101.42.7      Disk  █████████░  87%  412.0/476.0 GiB
+  Time        Sun 04 Oct 01:32 UTC           From        192.168.1.20      Load  █░░░░░░░░░ 0.45  8 cores
+  Last login  26h ago from 192.168.1.20
+```
+
+- **System** - Uptime, current user (bold red when you are root), local time,
+  and your previous login from the system's login history (Linux).
+- **Network** - The address carrying the default route first, then other
+  physical interfaces, each labeled by interface name. `From` is the SSH
+  client. Loopback, link-local, down interfaces, and container/VM bridges
+  (Docker, libvirt, CNI, LXD, Incus, Podman) stay out of view.
+- **Resources** - Usage meters for memory, the root filesystem (measured like
+  `df`), and the 1-minute load against the core count. Meters turn yellow at
+  75% and red at 90%. Windows shows realtime CPU usage instead of load.
 
 ### Terminal width handling
 
@@ -247,7 +289,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed development guidelines, code
 ```bash
 git clone https://github.com/veteranbv/sysgreet.git
 cd sysgreet
-go mod tidy
+go mod download
 make test
 make bench
 ```
@@ -268,13 +310,19 @@ platform-specific improvements before diving in.
 
 ## Release process
 
-- CI (`.github/workflows/ci.yml`) runs `golangci-lint`, unit tests with race
-  detection, integration tests, and validates startup performance (<80ms p95).
+- CI (`.github/workflows/ci.yml`) runs `golangci-lint`, the test suite on
+  Linux, macOS and Windows (plus the oldest supported Go), the race detector,
+  `govulncheck`, and a startup check that fails if a full banner takes more
+  than 250ms. Actions are pinned to commit SHAs and Dependabot keeps them and
+  the Go modules current.
 - To cut a release, run the **Tag Release** workflow from the Actions tab
   with a `vX.Y.Z` version (or push a `v*` tag manually). It tags `main` and
   hands off to the Release workflow.
-- Releases use GoReleaser (`.goreleaser.yml`) to ship signed binaries for
-  Linux/macOS (amd64/arm64) and Windows (amd64), plus checksums.
+- Releases use GoReleaser (`.goreleaser.yml`) with the latest Go release to
+  build reproducible binaries for Linux, macOS and Windows (amd64 and arm64),
+  plus checksums. Every archive gets a signed build-provenance attestation;
+  verify a download with
+  `gh attestation verify sysgreet_*.tar.gz --repo veteranbv/sysgreet`.
 - `go install github.com/veteranbv/sysgreet@VERSION` is validated during the
   release workflow.
 

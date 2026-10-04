@@ -2,6 +2,7 @@ package collectors
 
 import (
 	"context"
+	"net/netip"
 	"os"
 	"strings"
 )
@@ -27,8 +28,12 @@ func (EnvSessionCollector) CollectSession(ctx context.Context) (SessionInfo, err
 
 func parseSSHEnv(value string) string {
 	fields := strings.Fields(value)
-	if len(fields) > 0 {
-		return fields[0]
+	if len(fields) == 0 {
+		return ""
 	}
-	return ""
+	// Dual-stack sshd reports IPv4 clients as ::ffff:a.b.c.d.
+	if addr, err := netip.ParseAddr(fields[0]); err == nil {
+		return addr.Unmap().WithZone("").String()
+	}
+	return fields[0]
 }

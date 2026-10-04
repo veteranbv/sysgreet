@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 )
 
@@ -26,8 +27,6 @@ const (
 var (
 	// ErrInvalidPolicy indicates an unsupported policy value was provided.
 	ErrInvalidPolicy = errors.New("invalid config policy value")
-	// ErrPolicyRequired indicates non-interactive mode requires an explicit policy.
-	ErrPolicyRequired = errors.New("config policy required when prompts are unavailable")
 )
 
 // PolicyResolution captures the evaluated policy state.
@@ -56,7 +55,9 @@ func ResolvePolicy(flagValue, envValue string, interactive bool) (PolicyResoluti
 	}
 
 	if !interactive {
-		return PolicyResolution{}, ErrPolicyRequired
+		// Without a terminal there is no one to answer a prompt; leave any
+		// existing config alone.
+		return PolicyResolution{Value: PolicyKeep, Source: PolicySourceDefault, Interactive: interactive}, nil
 	}
 
 	return PolicyResolution{Value: PolicyPrompt, Source: PolicySourceDefault, Interactive: interactive}, nil
@@ -71,9 +72,7 @@ func ParsePolicy(input string) (PolicyValue, error) {
 		return PolicyKeep, nil
 	case string(PolicyOverwrite):
 		return PolicyOverwrite, nil
-	case "":
-		return "", ErrInvalidPolicy
 	default:
-		return "", ErrInvalidPolicy
+		return "", fmt.Errorf("%w %q (want prompt, keep, or overwrite)", ErrInvalidPolicy, input)
 	}
 }

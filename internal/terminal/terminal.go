@@ -145,6 +145,22 @@ func Wrap(p Profile, color, text string) string {
 	return code + text + Reset
 }
 
+// Bold renders text in bold when the profile allows any styling.
+func Bold(p Profile, text string) string {
+	if p == ProfileNoColor || text == "" {
+		return text
+	}
+	return "\033[1m" + text + Reset
+}
+
+// Dim renders text at reduced intensity when the profile allows styling.
+func Dim(p Profile, text string) string {
+	if p == ProfileNoColor || text == "" {
+		return text
+	}
+	return "\033[2m" + text + Reset
+}
+
 // RuneWidth returns the terminal column width of r: 2 for the common East
 // Asian wide/fullwidth and emoji ranges, 1 otherwise. Zero-width combining
 // marks are rare in banner content and treated as width 1.

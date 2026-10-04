@@ -1,6 +1,9 @@
 package bootstrap
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestResolvePolicy_FlagOverridesEnv(t *testing.T) {
 	res, err := ResolvePolicy("keep", "overwrite", true)
@@ -47,8 +50,19 @@ func TestResolvePolicy_InvalidValue(t *testing.T) {
 	}
 }
 
-func TestResolvePolicy_NonInteractiveRequiresExplicitPolicy(t *testing.T) {
-	if _, err := ResolvePolicy("", "", false); err != ErrPolicyRequired {
-		t.Fatalf("expected ErrPolicyRequired, got %v", err)
+func TestResolvePolicy_NonInteractiveDefaultsToKeep(t *testing.T) {
+	res, err := ResolvePolicy("", "", false)
+	if err != nil {
+		t.Fatalf("non-interactive resolution must not fail, got %v", err)
+	}
+	if res.Value != PolicyKeep {
+		t.Fatalf("expected keep without a terminal, got %s", res.Value)
+	}
+}
+
+func TestParsePolicy_ErrorNamesValue(t *testing.T) {
+	_, err := ParsePolicy("replace")
+	if err == nil || !strings.Contains(err.Error(), "replace") {
+		t.Fatalf("expected error naming the bad value, got %v", err)
 	}
 }
