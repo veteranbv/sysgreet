@@ -36,6 +36,12 @@ jobs:
             echo "::error::Tag $VERSION already exists"
             exit 1
           fi
+          # The release page uses this section as its notes; fail before
+          # tagging rather than after.
+          if ! scripts/release-notes.sh "$VERSION" >/dev/null; then
+            echo "::error::CHANGELOG.md on main has no '## $VERSION' section. Add the release notes and merge them first."
+            exit 1
+          fi
       - name: Create and push tag
         env:
           VERSION: ${{ inputs.version }}

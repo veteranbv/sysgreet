@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## v1.3.0
+
+### Upgrade notes
+
+- Building from source needs Go 1.26 or later.
+- `--config-policy` and `SYSGREET_CONFIG_POLICY` now only affect `--init-config`; a normal run never writes a config. Hosts that relied on the first login creating `~/.config/sysgreet/config.yaml` should run `sysgreet --init-config` once (built-in defaults apply until then).
+- Scripts parsing `--json` `lines` text should switch to the new `items` or `data` fields; the line format changed with the layout.
+- Shell snippets copied from the old README should gain the interactive guard shown in "Wire into your shell".
 
 ### Changed
 

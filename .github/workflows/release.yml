@@ -42,11 +42,13 @@ jobs:
         run: |
           go install ./cmd/sysgreet
           sysgreet --version
+      - name: Release notes from CHANGELOG.md
+        run: scripts/release-notes.sh "$(git describe --exact-match --tags HEAD)" > "$RUNNER_TEMP/release-notes.md"
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           version: "~> v2"
-          args: release --clean
+          args: release --clean --release-notes=${{ runner.temp }}/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Attest build provenance
