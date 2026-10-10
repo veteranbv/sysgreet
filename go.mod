@@ -2,7 +2,6 @@ module github.com/veteranbv/sysgreet
 
 go 1.26.0
 
-
 require (
 	github.com/common-nighthawk/go-figure v0.0.0-20210622060536-734e95fb86be
 	github.com/pelletier/go-toml/v2 v2.4.3
@@ -23,5 +22,5 @@ require (
 	github.com/tklauser/go-sysconf v0.4.0 // indirect
 	github.com/tklauser/numcpus v0.12.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
-	golang.org/x/sys v0.48.0
+	golang.org/x/sys v0.49.0
 )
