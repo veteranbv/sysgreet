@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.3.1
+
+### Changed
+
+- **Dependencies** - `golang.org/x/sys` 0.49.0 and `golang.org/x/term` 0.47.0. No behavior changes.
+
 ## v1.3.0
 
 ### Upgrade notes
