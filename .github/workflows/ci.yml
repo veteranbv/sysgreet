@@ -8,9 +8,10 @@ on:
 permissions:
   contents: read
 
+# Cancel superseded PR validation only; every main run is kept as evidence.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:

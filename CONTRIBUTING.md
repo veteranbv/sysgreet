@@ -105,6 +105,52 @@ Be respectful, professional, and constructive. We welcome contributions from dev
    - Reference any related issues
    - Ensure CI passes before requesting review
 
+### Required checks and review
+
+`main` requires every CI job (`lint`, each `test` matrix entry, `race`,
+`vulncheck`, `benchmark`) and `review-gate`.
+
+`review-gate` is a short, one-shot check of the current PR head. It never
+waits for a model. It passes only when all of these hold:
+
+- the repository owner's `@codex review` request names the exact current
+  head commit;
+- Codex has posted a typed code-review completion and receipt for that
+  commit after the request;
+- every review thread is resolved.
+
+Security review is advisory. It is not required, but any findings it reports
+on the current head block the merge. Reactions and clean-sounding prose do
+not count as review evidence.
+
+The gate also rejects:
+
+- AI attribution lines (such as `Co-Authored-By` or "Generated with" naming
+  an AI tool) in commits, the PR title or the PR description;
+- commits authored or committed by an app or bot account (Dependabot
+  excepted).
+
+Contributors do not need to configure Codex. The owner requests a review by
+posting a standalone comment that names the full 40-character head SHA:
+
+```text
+@codex review FULL_CURRENT_HEAD_SHA
+```
+
+A short SHA, another user's request, an edited request, or a review of an
+earlier head does not count. After you push changes, the owner requests a
+fresh review. Address every finding, either with a fix or with evidence that
+it is not a problem, and resolve its thread.
+
+The gate checks out only its two evaluator files
+(`.github/scripts/review_qualification.py` and `review_contract.py`) from
+the PR's base commit, without persisted credentials, and runs them with
+`python3 -I` and a read-only token. It never checks out PR code.
+`review-gate-retrigger` re-runs the existing gate job in place when Codex
+posts a receipt or submits a review; only the Codex bot's events start it.
+It is not a required check. The vendored evaluator files are maintained at
+their source; do not edit them here.
+
 ## Code Standards
 
 ### Principal Engineering Standards
