@@ -35,6 +35,9 @@ jobs:
           fi
       - name: Check go.mod is tidy
         run: go mod tidy -diff
+      - name: Test the review evaluator
+        # Stdlib-only; the runner's system python3 is sufficient.
+        run: python3 -I .github/scripts/test_review_contract.py
 
   test:
     name: test (${{ matrix.os }}, go ${{ matrix.go }})

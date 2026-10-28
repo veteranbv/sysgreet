@@ -39,3 +39,7 @@ Thumbs.db
 # Logs and temp files
 *.log
 *.tmp
+
+# Python bytecode
+__pycache__/
+*.pyc
