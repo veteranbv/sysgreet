@@ -21,6 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           # GoReleaser builds the changelog from history and needs the tags.
           fetch-depth: 0
       - name: Ensure release commit is tagged
@@ -34,6 +35,8 @@ jobs:
           # Always the latest Go release, so binaries ship with current
           # standard-library security fixes.
           go-version: stable
+          # Release artifacts never restore a cache that other runs wrote.
+          cache: false
       - name: Test
         env:
           CGO_ENABLED: "0"
