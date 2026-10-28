@@ -42,21 +42,6 @@ jobs:
         # Stdlib-only; the runner's system python3 is sufficient.
         run: python3 -I .github/scripts/test_review_contract.py
 
-  test:
-    name: test (${{ matrix.os }}, go ${{ matrix.go }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        go: [stable]
-        include:
-          # The oldest Go release go.mod allows, so `go install` keeps
-          # working for anyone on a supported toolchain.
-          - os: ubuntu-latest
-            go: "1.26.x"
-    runs-on: ${{ matrix.os }}
-    steps:
-
       - name: Install zizmor
         env:
           # Version and checksum are from the upstream v1.31.1 release assets.
@@ -76,6 +61,21 @@ jobs:
         # persistence, cache poisoning and permissions. Intentional exceptions
         # carry an inline reason.
         run: '"$RUNNER_TEMP/zizmor" --offline .github/workflows'
+
+  test:
+    name: test (${{ matrix.os }}, go ${{ matrix.go }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go: [stable]
+        include:
+          # The oldest Go release go.mod allows, so `go install` keeps
+          # working for anyone on a supported toolchain.
+          - os: ubuntu-latest
+            go: "1.26.x"
+    runs-on: ${{ matrix.os }}
+    steps:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
