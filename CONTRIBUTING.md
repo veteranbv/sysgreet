@@ -142,13 +142,18 @@ earlier head does not count. After you push changes, the owner requests a
 fresh review. Address every finding, either with a fix or with evidence that
 it is not a problem, and resolve its thread.
 
-The gate checks out only its two evaluator files
+The gate is `review-gate-trusted.yml`, triggered by `pull_request_target`.
+GitHub runs the default branch's copy of that workflow, so a PR cannot
+change what it checks. It checks out only its two evaluator files
 (`.github/scripts/review_qualification.py` and `review_contract.py`) from
-the PR's base commit, without persisted credentials, and runs them with
-`python3 -I` and a read-only token. It never checks out PR code.
-`review-gate-retrigger` re-runs the existing gate job in place when Codex
-posts a receipt or submits a review; only the Codex bot's events start it.
-It is not a required check. The vendored evaluator files are maintained at
+the default-branch tip, without persisted credentials, and runs them with
+`python3 -I` and a read-only token. It never checks out PR code. Branch
+protection pins the check to the GitHub Actions app rather than to that
+workflow, so the owner merges only with tooling that counts the trusted
+run alone, never with the merge button or auto-merge.
+`review-gate-retrigger` re-runs the gate job in place when Codex posts a
+receipt; it listens to comments only, which run the default branch's copy,
+and only the Codex bot's events start it. It is not a required check. The vendored evaluator files are maintained at
 their source; do not edit them here.
 
 ## Code Standards
