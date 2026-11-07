@@ -11,8 +11,8 @@ require (
 require golang.org/x/term v0.47.0
 
 require (
-	github.com/ebitengine/purego v0.11.1 // indirect
-	github.com/shirou/gopsutil/v4 v4.26.9
+	github.com/ebitengine/purego v0.11.2 // indirect
+	github.com/shirou/gopsutil/v4 v4.26.10
 )
 
 require (
