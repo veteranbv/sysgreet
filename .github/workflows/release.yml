@@ -30,7 +30,7 @@ jobs:
             echo "::error::No tag at HEAD. Cut releases with the 'Tag Release' workflow; running 'Release' directly only works at a tag ref."
             exit 1
           fi
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           # Always the latest Go release, so binaries ship with current
           # standard-library security fixes.
