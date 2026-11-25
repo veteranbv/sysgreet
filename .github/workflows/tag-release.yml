@@ -13,12 +13,16 @@ on:
         type: string
 
 permissions:
-  contents: write
-  actions: write
+  contents: read
 
 jobs:
   tag:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Pushes the release tag and dispatches the Release workflow.
+    permissions:
+      contents: write
+      actions: write
     steps:
       # Keeps its checkout credentials: this job pushes the release tag.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
