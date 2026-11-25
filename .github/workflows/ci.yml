@@ -8,14 +8,16 @@ on:
 permissions:
   contents: read
 
-# Cancel superseded PR validation only; every main run is kept as evidence.
+# Cancel superseded PR validation only; every main run keeps its own group
+# (run_id is unique), so none is replaced by a later push.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -38,9 +40,15 @@ jobs:
           fi
       - name: Check go.mod is tidy
         run: go mod tidy -diff
-      - name: Test the review evaluator
+      - name: Test the review evaluator and workflow policy
         # Stdlib-only; the runner's system python3 is sufficient.
-        run: python3 -I .github/scripts/test_review_contract.py
+        run: |
+          python3 -I .github/scripts/test_review_contract.py
+          python3 -I .github/scripts/test_workflow_pinning.py
+      - name: Enforce workflow action pinning
+        # Full commit SHAs for external actions; pull_request_target only in
+        # the trusted review gate.
+        run: python3 -I .github/scripts/check_workflow_pinning.py .github/workflows
 
       - name: Install zizmor
         env:
@@ -75,6 +83,7 @@ jobs:
           - os: ubuntu-latest
             go: "1.26.x"
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     steps:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -105,6 +114,7 @@ jobs:
 
   race:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -119,6 +129,7 @@ jobs:
 
   vulncheck:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -131,6 +142,7 @@ jobs:
 
   benchmark:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
